@@ -1,0 +1,26 @@
+import React, { createContext, useContext, useState, useCallback } from 'react';
+
+// Toast context for simple notifications
+const ToastContext = createContext();
+export const useToast = () => useContext(ToastContext);
+
+export function ToastProvider({ children }) {
+  const [toasts, setToasts] = useState([]);
+
+  const addToast = useCallback((message, type = 'info') => {
+    const id = Date.now();
+    setToasts(prev => [...prev, { id, message, type }]);
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 3000);
+  }, []);
+
+  return (
+    <ToastContext.Provider value={addToast}>
+      {children}
+      <div className="toast-container" aria-live="polite">
+        {toasts.map(t => (
+          <div key={t.id} className={`toast ${t.type}`}>{t.message}</div>
+        ))}
+      </div>
+    </ToastContext.Provider>
+  );
+}
