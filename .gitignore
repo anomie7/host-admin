@@ -7,3 +7,4 @@ screenshot-*.png
 ref-*.png
 visual-test.mjs
 reference.mjs
+*.timestamp-*.mjs
