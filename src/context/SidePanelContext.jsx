@@ -7,7 +7,7 @@ export function useSidePanel() {
 }
 
 export function SidePanelProvider({ children }) {
-  const [isOpen, setIsOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(true); // 기본 활성화
   const [activeTab, setActiveTab] = useState('chat');
 
   const toggle = useCallback(() => setIsOpen(prev => !prev), []);
