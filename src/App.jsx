@@ -5,6 +5,7 @@ import Dashboard from './components/Dashboard';
 import PropertyList from './components/PropertyList';
 import PropertyForm from './components/PropertyForm';
 import CalendarView from './components/CalendarView';
+import CanvasPage from './components/CanvasPage';
 import SidePanel from './components/SidePanel';
 import { ToastProvider } from './components/Toast';
 
@@ -35,6 +36,11 @@ export default function App() {
         <Route path="/calendar" element={
           <Layout title="캘린더">
             <CalendarView />
+          </Layout>
+        } />
+        <Route path="/canvas" element={
+          <Layout title="캔버스">
+            <CanvasPage />
           </Layout>
         } />
       </Routes>

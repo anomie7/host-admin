@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useCanvas } from '../context/CanvasContext';
-import { useSidePanel } from '../context/SidePanelContext';
 import ChatBubble from './ChatBubble';
 import ChatInput from './ChatInput';
 import UIRenderer from './UIRenderer';
@@ -15,7 +15,7 @@ export default function ChatPanel() {
   const [loading, setLoading] = useState(false);
   const listRef = useRef(null);
   const canvas = useCanvas();
-  const sidePanel = useSidePanel();
+  const navigate = useNavigate();
 
   useEffect(() => {
     if (listRef.current) {
@@ -49,8 +49,6 @@ export default function ChatPanel() {
         canvas.setTitle(data.canvas.title || '');
         canvas.addItems(data.canvas.items);
         assistantMsg.canvasAdded = true;
-        // Auto-switch to canvas tab briefly to show the result
-        // (user can still switch back)
       }
 
       setMessages(prev => [...prev, assistantMsg]);
@@ -71,8 +69,7 @@ export default function ChatPanel() {
 
   const handleAddToCanvas = (item) => {
     canvas.addItem(item);
-    // Visual feedback by switching to canvas tab
-    setTimeout(() => sidePanel.setActiveTab('canvas'), 300);
+    navigate('/canvas');
   };
 
   return (
@@ -92,7 +89,7 @@ export default function ChatPanel() {
                   <button
                     className="btn btn-ghost btn-sm"
                     style={{ marginTop: 6, fontSize: 11, color: 'var(--secondary)' }}
-                    onClick={() => sidePanel.setActiveTab('canvas')}
+                    onClick={() => navigate('/canvas')}
                   >
                     🎨 캔버스에서 보기
                   </button>

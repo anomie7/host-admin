@@ -34,6 +34,17 @@ const IconCalendar = () => (
   </svg>
 );
 
+const IconCanvas = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="3" y="3" width="18" height="18" rx="2" />
+    <path d="M3 9h18" />
+    <path d="M9 21V9" />
+    <circle cx="7.5" cy="6" r=".5" fill="currentColor" />
+    <circle cx="10.5" cy="6" r=".5" fill="currentColor" />
+    <circle cx="13.5" cy="6" r=".5" fill="currentColor" />
+  </svg>
+);
+
 export default function Layout({ children, title }) {
   const { isOpen, toggle } = useSidePanel();
 
@@ -50,6 +61,9 @@ export default function Layout({ children, title }) {
           </NavLink>
           <NavLink to="/calendar" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`} aria-label="캘린더">
             <IconCalendar />
+          </NavLink>
+          <NavLink to="/canvas" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`} aria-label="캔버스">
+            <IconCanvas />
           </NavLink>
         </div>
       </nav>

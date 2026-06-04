@@ -8,14 +8,13 @@ export function useSidePanel() {
 
 export function SidePanelProvider({ children }) {
   const [isOpen, setIsOpen] = useState(true); // 기본 활성화
-  const [activeTab, setActiveTab] = useState('chat');
 
   const toggle = useCallback(() => setIsOpen(prev => !prev), []);
   const open = useCallback(() => setIsOpen(true), []);
   const close = useCallback(() => setIsOpen(false), []);
 
   return (
-    <SidePanelContext.Provider value={{ isOpen, activeTab, setActiveTab, toggle, open, close }}>
+    <SidePanelContext.Provider value={{ isOpen, toggle, open, close }}>
       {children}
     </SidePanelContext.Provider>
   );
