@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useCanvas } from '../context/CanvasContext';
+import { useSidePanel } from '../context/SidePanelContext';
 import ChatBubble from './ChatBubble';
 import ChatInput from './ChatInput';
 import UIRenderer from './UIRenderer';
@@ -16,6 +17,7 @@ export default function ChatPanel() {
   const listRef = useRef(null);
   const canvas = useCanvas();
   const navigate = useNavigate();
+  const { close: closeSidePanel } = useSidePanel();
 
   useEffect(() => {
     if (listRef.current) {
@@ -44,11 +46,13 @@ export default function ChatPanel() {
 
       const assistantMsg = { role: 'assistant', content: data.message, ui: data.ui || null };
 
-      // If AI returned canvas payload, add to canvas and notify user
+      // If AI returned canvas payload, add to canvas and navigate
       if (data.canvas && data.canvas.items && data.canvas.items.length > 0) {
         canvas.setTitle(data.canvas.title || '');
         canvas.addItems(data.canvas.items);
         assistantMsg.canvasAdded = true;
+        // 자동으로 캔버스 페이지로 이동 + 사이드 패널 닫기
+        setTimeout(() => { closeSidePanel(); navigate('/canvas'); }, 500);
       }
 
       setMessages(prev => [...prev, assistantMsg]);
@@ -83,18 +87,7 @@ export default function ChatPanel() {
               </React.Fragment>
             ))}
             {msg.ui && (
-              <>
-                <UIRenderer ui={msg.ui} onAddToCanvas={handleAddToCanvas} />
-                {msg.canvasAdded && (
-                  <button
-                    className="btn btn-ghost btn-sm"
-                    style={{ marginTop: 6, fontSize: 11, color: 'var(--secondary)' }}
-                    onClick={() => navigate('/canvas')}
-                  >
-                    🎨 캔버스에서 보기
-                  </button>
-                )}
-              </>
+              <UIRenderer ui={msg.ui} onAddToCanvas={handleAddToCanvas} />
             )}
           </ChatBubble>
         ))}
