@@ -201,6 +201,6 @@ app.get('*', (req, res) => {
 });
 
 const PORT = process.env.PORT || 4001;
-app.listen(PORT, () => {
-  console.log(`🏨 Host Admin server running on http://localhost:${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`🏨 Host Admin server running on port ${PORT}`);
 });
