@@ -2,13 +2,16 @@ import express from 'express';
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import dotenv from 'dotenv';
 import { getDb } from './db.js';
 import propertiesRouter from './routes/properties.js';
 import bookingsRouter from './routes/bookings.js';
+import chatRouter from './routes/chat.js';
 import fs from 'fs';
 import { spawnSync } from 'child_process';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.join(__dirname, '..', '..', '.env') });
 const app = express();
 
 app.use(cors());
@@ -20,6 +23,7 @@ app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
 // API routes
 app.use('/api/properties', propertiesRouter);
 app.use('/api/bookings', bookingsRouter);
+app.use('/api/chat', chatRouter);
 
 // Calendar endpoint — bookings grouped by date for a given month
 app.get('/api/calendar', (req, res) => {

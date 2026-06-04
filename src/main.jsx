@@ -2,12 +2,15 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import App from './App';
+import { SidePanelProvider } from './context/SidePanelContext';
 import './styles/global.css';
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <BrowserRouter>
-      <App />
+      <SidePanelProvider>
+        <App />
+      </SidePanelProvider>
     </BrowserRouter>
   </React.StrictMode>
 );

@@ -5,6 +5,7 @@ import Dashboard from './components/Dashboard';
 import PropertyList from './components/PropertyList';
 import PropertyForm from './components/PropertyForm';
 import CalendarView from './components/CalendarView';
+import SidePanel from './components/SidePanel';
 import { ToastProvider } from './components/Toast';
 
 export default function App() {
@@ -37,6 +38,7 @@ export default function App() {
           </Layout>
         } />
       </Routes>
+      <SidePanel />
     </ToastProvider>
   );
 }
