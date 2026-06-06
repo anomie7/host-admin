@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { useToast } from './Toast';
@@ -26,31 +26,47 @@ const PlatformIcon = ({ platform }) => {
 export default function PropertyList() {
   const [properties, setProperties] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const navigate = useNavigate();
   const toast = useToast();
 
-  useEffect(() => {
+  const fetchProperties = useCallback(() => {
     api.getProperties()
       .then(setProperties)
       .catch(e => toast(e.message, 'error'))
       .finally(() => setLoading(false));
   }, []);
 
+  useEffect(() => {
+    fetchProperties();
+  }, [fetchProperties]);
+
   // Auto-refresh when returning to this page (tab focus / visibility change)
   useEffect(() => {
-    const refetch = () => {
-      api.getProperties()
-        .then(setProperties)
-        .catch(() => {});
-    };
-    window.addEventListener('focus', refetch);
+    window.addEventListener('focus', fetchProperties);
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible') refetch();
+      if (document.visibilityState === 'visible') fetchProperties();
     });
     return () => {
-      window.removeEventListener('focus', refetch);
-      document.removeEventListener('visibilitychange', refetch);
+      window.removeEventListener('focus', fetchProperties);
+      document.removeEventListener('visibilitychange', fetchProperties);
     };
+  }, [fetchProperties]);
+
+  // Listen for property data changes from AI (tags, status, etc.)
+  useEffect(() => {
+    const handleDataChanged = async () => {
+      setRefreshing(true);
+      // Small delay so the overlay is visible
+      await new Promise(r => setTimeout(r, 600));
+      try {
+        const data = await api.getProperties();
+        setProperties(data);
+      } catch {}
+      setRefreshing(false);
+    };
+    window.addEventListener('property-data-changed', handleDataChanged);
+    return () => window.removeEventListener('property-data-changed', handleDataChanged);
   }, []);
 
   const handleDelete = async (e, id) => {
@@ -79,7 +95,30 @@ export default function PropertyList() {
   }
 
   return (
-    <div>
+    <div style={{ position: 'relative' }}>
+      {/* Refreshing overlay */}
+      {refreshing && (
+        <div style={{
+          position: 'absolute', inset: 0, zIndex: 50,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: 'rgba(254, 249, 245, 0.75)',
+          backdropFilter: 'blur(2px)',
+          borderRadius: 'var(--radius)',
+          animation: 'fadeIn 150ms ease',
+        }}>
+          <div style={{
+            background: 'var(--bg-elevated)',
+            border: '1px solid var(--border-light)',
+            borderRadius: 16, padding: '24px 36px',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.1)',
+            textAlign: 'center',
+          }}>
+            <div style={{ fontSize: 32, marginBottom: 8 }}>🏷️</div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>라벨링 중...</div>
+            <div style={{ fontSize: 12, color: 'var(--text-dim)' }}>변경사항을 반영하고 있습니다</div>
+          </div>
+        </div>
+      )}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
         <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
           {properties.length} {properties.length === 1 ? 'property' : 'properties'}

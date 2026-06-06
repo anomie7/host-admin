@@ -858,6 +858,7 @@ router.post('/', async (req, res) => {
     }
 
     // Check if AI wants to call tools
+    const dataModifyingTools = new Set();
     if (firstChoice.tool_calls && firstChoice.tool_calls.length > 0) {
       // Add the assistant's tool call message to the conversation
       const messageLog = [...fullMessages, firstChoice];
@@ -870,6 +871,9 @@ router.post('/', async (req, res) => {
           try { args = JSON.parse(argsStr); } catch {}
           
           console.log(`🔧 Tool call: ${name}(${JSON.stringify(args)})`);
+          if (['add_property_tag', 'remove_property_tag', 'update_booking_status'].includes(name)) {
+            dataModifyingTools.add(name);
+          }
           const result = executeTool(name, args);
           const resultStr = JSON.stringify(result);
           
@@ -908,6 +912,9 @@ router.post('/', async (req, res) => {
               let args = {};
               try { args = JSON.parse(argsStr); } catch {}
               console.log(`🔧 Tool call (round ${toolRound + 2}): ${name}(${JSON.stringify(args)})`);
+              if (['add_property_tag', 'remove_property_tag', 'update_booking_status'].includes(name)) {
+                dataModifyingTools.add(name);
+              }
               const result = executeTool(name, args);
               currentLog.push({
                 role: 'tool',
@@ -932,17 +939,29 @@ router.post('/', async (req, res) => {
       const result = parseAIResponse(finalContent);
       if (result) {
         console.log('📦 AI response:', result.canvas ? `✅ canvas ${result.canvas.items?.length || 0} items` : 'no canvas');
+        if (dataModifyingTools.size > 0) {
+          result._refetch = 'properties';
+          console.log('🏷️  Data modified — injected _refetch flag');
+        }
         return res.json(result);
       }
-      // Fallback: if user asked for dashboard but AI didn't provide canvas, auto-create
+      // Fallback
       if (isDashboardRequest(userMessages)) {
         const canvas = buildAutoCanvas(userMessages);
         const msg = finalContent.length > 300 ? finalContent.slice(0, 300) + '…' : finalContent;
+        const response = { message: msg, ui: null, canvas };
+        if (dataModifyingTools.size > 0) {
+          response._refetch = 'properties';
+        }
         console.log('🔄 Auto-generating canvas (AI failed to include it)');
-        return res.json({ message: msg, ui: null, canvas });
+        return res.json(response);
       }
       console.log('⚠️  AI response not JSON — raw:', finalContent.slice(0, 100).replace(/\n/g, ' '));
-      return res.json({ message: finalContent, ui: null });
+      const fallbackResponse = { message: finalContent, ui: null };
+      if (dataModifyingTools.size > 0) {
+        fallbackResponse._refetch = 'properties';
+      }
+      return res.json(fallbackResponse);
     }
 
     // No tool calls — direct response

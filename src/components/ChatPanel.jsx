@@ -77,6 +77,11 @@ export default function ChatPanel() {
         setTimeout(() => { closeSidePanel(); navigate('/canvas'); }, 500);
       }
 
+      // If AI modified data (tags, booking status), broadcast refresh event
+      if (data._refetch === 'properties') {
+        window.dispatchEvent(new CustomEvent('property-data-changed'));
+      }
+
       setMessages(prev => [...prev, assistantMsg]);
     } catch (err) {
       const errMsg = err.message === 'API error'
