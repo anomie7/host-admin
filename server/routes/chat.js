@@ -648,6 +648,25 @@ async function callDeepSeek(messages, toolsEnabled = true) {
   return data;
 }
 
+// Tool labels for progress display
+const toolLabels = {
+  search_bookings: '🔍 예약 검색',
+  get_dashboard_summary: '📊 통계 요약',
+  search_properties: '🏠 숙소 검색',
+  get_calendar: '📅 캘린더 조회',
+  get_chart_data: '📈 차트 데이터',
+  get_booking_stats_by_property: '🏆 숙소 통계',
+  get_db_schema: '🗄️ DB 조회',
+  execute_sql: '🔎 데이터 분석',
+  add_property_tag: '🏷️ 태그 추가',
+  remove_property_tag: '🏷️ 태그 제거',
+  update_booking_status: '🔄 상태 변경',
+};
+
+function getToolLabel(name) {
+  return toolLabels[name] || `🔧 ${name}`;
+}
+
 router.post('/', async (req, res) => {
   try {
     const { messages } = req.body;
@@ -713,7 +732,7 @@ router.post('/', async (req, res) => {
       let finalContent = null;
       let currentLog = messageLog;
       let toolRound = 0;
-      const MAX_TOOL_ROUNDS = 8;
+      const MAX_TOOL_ROUNDS = 20;
 
       while (toolRound < MAX_TOOL_ROUNDS) {
         const response = await callDeepSeek(currentLog, true);
@@ -825,6 +844,112 @@ router.post('/', async (req, res) => {
       message: '죄송합니다, 일시적인 오류가 발생했습니다. 다시 시도해주세요.',
       ui: null,
     });
+  }
+});
+
+// ===== SSE Streaming endpoint =====
+
+router.post('/stream', async (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders();
+
+  const send = (event, data) => {
+    try { res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`); } catch {}
+  };
+
+  try {
+    const { messages } = req.body;
+    if (!messages || !Array.isArray(messages)) {
+      send('error', { error: 'messages array required' });
+      return res.end();
+    }
+
+    const userMessages = messages.filter(m => m.role !== 'system');
+    const fullMessages = [{ role: 'system', content: getSystemPrompt() }, ...userMessages];
+    const dataModifyingTools = new Set();
+
+    let currentLog = fullMessages;
+    let toolRound = 0;
+    let finalResult = null;
+
+    for (let round = 0; round < 20; round++) {
+      const response = await callDeepSeek(currentLog, round === 0 ? true : true);
+      if (response.error === 'NO_API_KEY') {
+        send('complete', { message: 'AI 어시스턴트를 사용하려면 DeepSeek API 키가 필요합니다.', ui: null });
+        return res.end();
+      }
+      if (response.error === 'API_ERROR') {
+        send('complete', { message: 'AI 서비스에 일시적인 문제가 있습니다.', ui: null });
+        return res.end();
+      }
+
+      const choice = response.choices?.[0]?.message;
+      if (!choice) {
+        send('complete', { message: 'AI 응답을 받지 못했습니다.', ui: null });
+        return res.end();
+      }
+
+      // If no tool calls, we have the final response
+      if (!choice.tool_calls || choice.tool_calls.length === 0) {
+        const content = choice.content || '';
+        const result = parseAIResponse(content);
+        if (result) {
+          if (dataModifyingTools.size > 0) result._refetch = 'properties';
+          send('complete', result);
+        } else {
+          send('complete', { message: content, ui: null });
+        }
+        return res.end();
+      }
+
+      // Process tool calls
+      currentLog.push(choice);
+      for (const tc of choice.tool_calls) {
+        if (tc.type !== 'function') continue;
+        const { name, arguments: argsStr } = tc.function;
+        let args = {};
+        try { args = JSON.parse(argsStr); } catch {}
+
+        const label = getToolLabel(name);
+        send('tool', { name, label, status: 'running' });
+
+        if (['add_property_tag', 'remove_property_tag', 'update_booking_status'].includes(name)) {
+          dataModifyingTools.add(name);
+        }
+        const result = executeTool(name, args);
+        send('tool', { name, label, status: 'done' });
+
+        currentLog.push({
+          role: 'tool',
+          tool_call_id: tc.id,
+          content: JSON.stringify(result),
+        });
+      }
+    }
+
+    // Max rounds reached — fallback
+    const lastTool = [...currentLog].reverse().find(m => m.role === 'tool');
+    if (lastTool) {
+      try {
+        const td = JSON.parse(lastTool.content);
+        send('complete', {
+          message: '조회 결과를 정리했습니다.',
+          ui: { type: 'stats-card', props: { label: '조회 결과', value: `${Array.isArray(td) ? td.length : 1}건` } },
+        });
+      } catch {
+        send('complete', { message: '데이터 조회가 완료되었습니다.', ui: null });
+      }
+    } else {
+      send('complete', { message: '데이터 조회가 완료되었습니다.', ui: null });
+    }
+    res.end();
+
+  } catch (err) {
+    console.error('Stream error:', err);
+    try { send('complete', { message: '오류가 발생했습니다.', ui: null }); res.end(); } catch {}
   }
 });
 

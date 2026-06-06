@@ -9,6 +9,7 @@ import useSession from '../hooks/useSession';
 export default function ChatPanel() {
   const { messages, setMessages, sessions, currentSession, currentId, loadSession, newSession, deleteSession } = useSession();
   const [loading, setLoading] = useState(false);
+  const [toolProgress, setToolProgress] = useState(null);
   const [inputText, setInputText] = useState('');
   const listRef = useRef(null);
   const canvas = useCanvas();
@@ -55,15 +56,47 @@ export default function ChatPanel() {
         return { role: m.role, content };
       });
 
-      const res = await fetch('/api/chat', {
+      // SSE streaming via /api/chat/stream
+      const res = await fetch('/api/chat/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: messagesForApi,
-        }),
+        body: JSON.stringify({ messages: messagesForApi }),
       });
       if (!res.ok) throw new Error('API error');
-      const data = await res.json();
+
+      // Read SSE stream
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let data = null;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        let currentEvent = '';
+        for (const line of lines) {
+          if (line.startsWith('event: ')) {
+            currentEvent = line.slice(7).trim();
+          } else if (line.startsWith('data: ')) {
+            const jsonStr = line.slice(6);
+            try {
+              const eventData = JSON.parse(jsonStr);
+              if (currentEvent === 'tool') {
+                setToolProgress(eventData.status === 'running' ? eventData.label : null);
+              } else if (currentEvent === 'complete') {
+                data = eventData;
+              }
+            } catch {}
+          }
+        }
+      }
+
+      if (!data) throw new Error('No data in stream');
 
       const assistantMsg = { role: 'assistant', content: data.message, ui: data.ui || null };
 
@@ -96,6 +129,7 @@ export default function ChatPanel() {
       ]);
     } finally {
       setLoading(false);
+      setToolProgress(null);
     }
   };
 
@@ -216,9 +250,18 @@ export default function ChatPanel() {
         ))}
         {loading && (
           <ChatBubble role="assistant">
-            <span className="typing-indicator">
-              <span>.</span><span>.</span><span>.</span>
-            </span>
+            {toolProgress ? (
+              <span style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span className="typing-indicator" style={{ display: 'inline-flex' }}>
+                  <span>.</span><span>.</span><span>.</span>
+                </span>
+                <span>{toolProgress}</span>
+              </span>
+            ) : (
+              <span className="typing-indicator">
+                <span>.</span><span>.</span><span>.</span>
+              </span>
+            )}
           </ChatBubble>
         )}
       </div>
