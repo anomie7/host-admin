@@ -110,7 +110,7 @@ export default function Layout({ children, title }) {
       </div>
 
       {isMobile && panelOpen && <div className="side-overlay" onClick={closePanel} />}
-      <SidePanel open={panelOpen} onClose={closePanel} isMobile={isMobile} />
+      <SidePanel open={panelOpen} onClose={closePanel} onToggle={togglePanel} isMobile={isMobile} />
     </div>
   );
 }
