@@ -12,9 +12,12 @@
     "eval": "node test/eval.js",
     "eval:quick": "node test/eval.js --quick",
     "eval:verbose": "node test/eval.js --verbose",
+    "test": "npx playwright test test/playwright.spec.mjs --reporter=list",
+    "test:headed": "npx playwright test test/playwright.spec.mjs --reporter=list --headed",
     "start": "node server/index.js"
   },
   "dependencies": {
+    "@playwright/test": "^1.60.0",
     "better-sqlite3": "^11.7.0",
     "cors": "^2.8.5",
     "dotenv": "^17.4.2",
