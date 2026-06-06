@@ -69,10 +69,10 @@ export default function ChatPanel() {
 
       const assistantMsg = { role: 'assistant', content: data.message, ui: data.ui || null };
 
-      // If AI returned canvas payload, add to canvas and navigate
+      // If AI returned canvas payload, create a NEW canvas session (never overwrites)
       if (data.canvas && data.canvas.items && data.canvas.items.length > 0) {
-        canvas.setTitle(data.canvas.title || '');
-        canvas.addItems(data.canvas.items);
+        const title = data.canvas.title || '대시보드';
+        canvas.createSession(title, data.canvas.items);
         assistantMsg.canvasAdded = true;
         setTimeout(() => { closeSidePanel(); navigate('/canvas'); }, 500);
       }

@@ -3,7 +3,7 @@ import { useCanvas } from '../context/CanvasContext';
 import UIRenderer from './UIRenderer';
 
 export default function CanvasPanel() {
-  const { items, canvasTitle, removeItem, clearItems } = useCanvas();
+  const { items, canvasTitle, currentSession, removeItem, clearItems, createSession } = useCanvas();
 
   if (items.length === 0) {
     return (
@@ -13,12 +13,19 @@ export default function CanvasPanel() {
           캔버스
         </h3>
         <p style={{ fontSize: 13, lineHeight: 1.6 }}>
-          채팅에서 "캔버스에 띄워줘"라고 말하면<br />
-          AI가 생성한 UI 컴포넌트가 여기에 표시됩니다.
+          {currentSession ? '캔버스가 비어있어요' : '아직 캔버스가 없어요'}
+          <br />
+          AI에게 "대쉬보드로 만들어봐"라고 말해보세요.
         </p>
-        <p style={{ fontSize: 12, marginTop: 16, color: 'var(--text-dim)' }}>
-          예: "한눈에 보기 좋게 대시보드 만들어줘"
-        </p>
+        {!currentSession && (
+          <button
+            className="btn btn-primary btn-sm"
+            style={{ marginTop: 16 }}
+            onClick={() => createSession('새 캔버스', [])}
+          >
+            ✚ 새 캔버스
+          </button>
+        )}
       </div>
     );
   }
