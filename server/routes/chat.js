@@ -716,10 +716,11 @@ execute_sql()을 쓰기 전에 먼저 호출해서 테이블과 컬럼명을 정
 
 ## 예약 상태 변경 (update_booking_status)
 
-사용자가 "예약 1번 상태를 체크인으로 변경해줘", "예약 5번 취소해줘" 라고 하면:
+사용자가 "예약 1번 상태를 체크인으로 변경해줘", "예약 5번 취소해줘", "예약 상태 변경해줘" 라고 하면:
 1. search_bookings({ id: 1 })로 예약 존재 확인
-2. update_booking_status({ booking_id: 1, status: "checked_in" }) 실행
-3. 변경된 예약 상세를 booking-detail UI로 표시
+2. 예약이 이미 checked_out/cancelled 같은 종료 상태면 변경 불가 안내하고 대신 **변경 가능한 upcoming 예약을 search_bookings({ status: 'upcoming', limit: 1 })로 찾아서 제안**
+3. 변경 가능하면 update_booking_status({ booking_id, status }) 실행
+4. 변경된 예약 상세를 booking-detail UI로 표시
 
 ## 예약 상세는 채팅창에 인라인으로 표시
 
