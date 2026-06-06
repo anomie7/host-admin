@@ -16,77 +16,89 @@ const properties = [
     address: '서울 서초구 강남대로53길 25-3',
     description: '코엑스와 삼성역 인근의 모던한 스튜디오. 간이 주방과 세탁기 완비. 출장자에게 최적입니다.',
     platforms: ['airbnb', 'booking'],
+    tags: ['📈 예약 증가 중'],
   },
   {
     name: '홍대 아티스트 로프트',
     address: '서울 마포구 와우산로29다길 17',
     description: '홍대 중심부의 넓은 로프트형 숙소. 클럽, 카페, 대중교통이 도보 거리입니다.',
     platforms: ['airbnb', 'liveanywhere'],
+    tags: [],
   },
   {
     name: '성수 미니멀 플랫',
     address: '서울 성동구 성수이로7길 49',
     description: '트렌디한 성수동의 미니멀리스트 디자인 플랫. 인근 숲공원과 수제 카페가 있습니다.',
     platforms: ['airbnb', 'booking', 'liveanywhere'],
+    tags: ['🏆 수익률 1위'],
   },
   {
     name: '용산 리버뷰 하우스',
     address: '서울 용산구 이촌로 72길 12',
     description: '한강이 내려다보이는 고급 레지던스. 넓은 거실과 오픈 키친, 와인 셀러 완비.',
     platforms: ['airbnb', 'booking'],
+    tags: ['💰 고객단가 TOP3'],
   },
   {
     name: '이태원 힐탑 스위트',
     address: '서울 용산구 이태원로 45길 21-7',
     description: '남산 뷰의 힐탑 스위트. 루프탑 테라스에서 서울 야경을 즐기세요.',
     platforms: ['airbnb', 'liveanywhere'],
+    tags: [],
   },
   {
     name: '종로 한옥 게스트하우스',
     address: '서울 종로구 북촌로 11길 28',
     description: '북촌 한옥마을의 전통 한옥을 개조한 게스트하우스. 온돌방과 마당 정원.',
     platforms: ['airbnb', 'booking'],
+    tags: [],
   },
   {
     name: '서촌 감성 주택',
     address: '서울 종로구 자하문로 16길 3-5',
     description: '경복궁 서편 조용한 주택가의 감성 숙소. 작은 정원과 갤러리 공간.',
     platforms: ['airbnb', 'booking', 'liveanywhere'],
+    tags: [],
   },
   {
     name: '해운대 오션뷰 레지던스',
     address: '부산 해운대구 우동 612-8',
     description: '해운대 해변 바로 앞 오션뷰 레지던스. 커플 여행객에게 인기.',
     platforms: ['airbnb', 'booking'],
+    tags: [],
   },
   {
     name: '제주 애월 바다집',
     address: '제주시 애월읍 애월해안로 567',
     description: '제주 서부 해안가의 단독 숙소. 넓은 마당과 바비큐 시설 완비.',
     platforms: ['airbnb', 'liveanywhere'],
+    tags: [],
   },
   {
     name: '제주 성산의 뜨락',
     address: '제주 서귀포시 성산읍 일출로 214',
     description: '성산일출봉 인근의 조용한 전원주택. 여유로운 힐링 공간.',
     platforms: ['airbnb', 'booking'],
+    tags: [],
   },
   {
     name: '여수 밤바다 펜션',
     address: '전남 여수시 돌산읍 돌산로 887-12',
     description: '여수 밤바다가 보이는 감성 펜션. 돌산갓김치와 게장 맛집 인근.',
     platforms: ['airbnb', 'booking', 'liveanywhere'],
+    tags: [],
   },
   {
     name: '속초 바다뷰 스테이',
     address: '강원 속초시 대포동 347-1',
     description: '동해바다가 한눈에 보이는 뷰 맛집. 대포항 활어회와 설악산 국립공원 인근.',
     platforms: ['airbnb', 'booking'],
+    tags: ['⭐ 게스트 만족도 높음'],
   },
 ];
 
 const insertProperty = db.prepare(
-  'INSERT INTO properties (name, address, description, platforms, photos) VALUES (?, ?, ?, ?, ?)'
+  'INSERT INTO properties (name, address, description, platforms, photos, tags) VALUES (?, ?, ?, ?, ?, ?)'
 );
 
 const propertyIds = [];
@@ -94,7 +106,8 @@ for (const p of properties) {
   const result = insertProperty.run(
     p.name, p.address, p.description,
     JSON.stringify(p.platforms),
-    JSON.stringify([])
+    JSON.stringify([]),
+    JSON.stringify(p.tags || [])
   );
   propertyIds.push(Number(result.lastInsertRowid));
 }
