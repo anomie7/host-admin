@@ -819,6 +819,27 @@ textarea.form-input { resize: vertical; min-height: 80px; }
 
 /* ===== Responsive ===== */
 @media (max-width: 768px) {
+  .app-layout { flex-direction: column; }
+  .sidebar {
+    width: 100%;
+    min-width: unset;
+    height: auto;
+    flex-direction: row;
+    padding: 0 12px;
+    gap: 0;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  .sidebar-logo { display: none; }
+  .sidebar-nav {
+    flex-direction: row;
+    width: 100%;
+    padding: 0;
+    justify-content: space-around;
+  }
+  .sidebar-link { height: 44px; flex: 1; }
+  .sidebar-link.active::before { display: none; }
   .side-panel-collapse { display: none !important; }
   .side-panel { width: 100vw; min-width: unset; z-index: 55; }
   .side-overlay {
@@ -828,9 +849,6 @@ textarea.form-input { resize: vertical; min-height: 80px; }
     z-index: 54;
     animation: fadeIn 200ms ease;
   }
-  .sidebar { width: 48px; min-width: 48px; }
-  .sidebar-link { height: 36px; }
-  .sidebar-logo { font-size: 17px; }
   .main-header { padding: 16px; }
   .main-header h1 { font-size: 17px; }
   .main-content { padding: 16px; }

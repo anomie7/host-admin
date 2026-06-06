@@ -102,10 +102,22 @@ test.describe('Canvas Multi-Session', () => {
 test.describe('Mobile', () => {
   test.use({ viewport: { width: 480, height: 800 } });
 
-  test('side panel exists on mobile', async ({ page }) => {
+  test('side panel opens and closes on mobile', async ({ page }) => {
     await page.goto(BASE);
     await page.waitForTimeout(500);
-    await expect(page.locator('.side-panel')).toBeVisible();
+    // Panel starts open — close via panel's close button
+    const closeBtn = page.locator('.side-panel-close');
+    if (await closeBtn.count() > 0) {
+      await closeBtn.click();
+      await page.waitForTimeout(500);
+    }
+    await expect(page.locator('.side-panel.side-panel--open')).toHaveCount(0);
+    // Open via toggle button
+    const toggleBtn = page.locator('button[aria-label="AI 어시스턴트"]');
+    await expect(toggleBtn).toBeVisible();
+    await toggleBtn.click();
+    await page.waitForTimeout(500);
+    await expect(page.locator('.side-panel.side-panel--open')).toBeVisible();
   });
 });
 
