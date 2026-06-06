@@ -969,6 +969,9 @@ router.post('/', async (req, res) => {
           result._refetch = 'properties';
           console.log('🏷️  Data modified — injected _refetch flag');
         }
+        if (aiPlan) {
+          result.plan = aiPlan;
+        }
         return res.json(result);
       }
       // Fallback

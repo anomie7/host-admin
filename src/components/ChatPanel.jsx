@@ -4,6 +4,7 @@ import { useCanvas } from '../context/CanvasContext';
 import ChatBubble from './ChatBubble';
 import ChatInput from './ChatInput';
 import UIRenderer from './UIRenderer';
+import PlanProgress from './PlanProgress';
 import useSession from '../hooks/useSession';
 
 export default function ChatPanel() {
@@ -68,7 +69,7 @@ export default function ChatPanel() {
       if (!res.ok) throw new Error('API error');
       const data = await res.json();
 
-      const assistantMsg = { role: 'assistant', content: data.message, ui: data.ui || null };
+      const assistantMsg = { role: 'assistant', content: data.message, ui: data.ui || null, plan: data.plan || null };
 
       // If AI returned canvas payload, create a NEW canvas session (never overwrites)
       if (data.canvas && data.canvas.items && data.canvas.items.length > 0) {
@@ -193,6 +194,9 @@ export default function ChatPanel() {
       <div className="chat-messages" ref={listRef}>
         {messages.map((msg, i) => (
           <ChatBubble key={i} role={msg.role}>
+            {msg.plan && (
+              <PlanProgress plan={msg.plan} completedSteps={msg.plan.map((_, i) => i)} />
+            )}
             {msg.content.split('\n').map((line, j) => (
               <React.Fragment key={j}>
                 {j > 0 && <br />}{line}
