@@ -110,9 +110,9 @@ function RevenueChart({ data }) {
   if (chartData.length === 0) return <EmptyChart />;
 
   return (
-    <div style={{ width: '100%', height: 220 }}>
-      <ResponsiveContainer>
-        <LineChart data={chartData} margin={{ top: 8, right: 16, left: 8, bottom: 4 }}>
+    <div style={{ width: '100%', height: 220, position: 'relative' }}>
+      <ResponsiveContainer width="100%" height={220}>
+        <LineChart data={chartData} margin={{ top: 4, right: 4, left: -8, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="var(--border-light)" />
           <XAxis dataKey="month" tick={{ fontSize: 11, fill: 'var(--text-secondary)' }} />
           <YAxis tick={{ fontSize: 11, fill: 'var(--text-secondary)' }} tickFormatter={v => `${Math.round(v / 10000)}만`} />
@@ -140,9 +140,9 @@ function PlatformChart({ data }) {
   if (chartData.length === 0) return <EmptyChart />;
 
   return (
-    <div style={{ width: '100%', height: 200 }}>
-      <ResponsiveContainer>
-        <BarChart data={chartData} margin={{ top: 8, right: 16, left: 8, bottom: 4 }}>
+    <div style={{ width: '100%', height: 200, position: 'relative' }}>
+      <ResponsiveContainer width="100%" height={200}>
+        <BarChart data={chartData} margin={{ top: 4, right: 4, left: -8, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="var(--border-light)" />
           <XAxis dataKey="platform" tick={{ fontSize: 11, fill: 'var(--text-secondary)' }} />
           <YAxis tick={{ fontSize: 11, fill: 'var(--text-secondary)' }} tickFormatter={v => `${Math.round(v / 10000)}만`} />
@@ -174,9 +174,9 @@ function OccupancyChart({ data }) {
   if (chartData.length === 0) return <EmptyChart />;
 
   return (
-    <div style={{ width: '100%', height: 200 }}>
-      <ResponsiveContainer>
-        <BarChart data={chartData} margin={{ top: 8, right: 16, left: 8, bottom: 4 }}>
+    <div style={{ width: '100%', height: 200, position: 'relative' }}>
+      <ResponsiveContainer width="100%" height={200}>
+        <BarChart data={chartData} margin={{ top: 4, right: 4, left: -8, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="var(--border-light)" />
           <XAxis dataKey="month" tick={{ fontSize: 11, fill: 'var(--text-secondary)' }} />
           <YAxis domain={[0, 100]} tick={{ fontSize: 11, fill: 'var(--text-secondary)' }} tickFormatter={v => `${v}%`} />
@@ -204,8 +204,8 @@ function StatusChart({ data }) {
   if (chartData.length === 0) return <EmptyChart />;
 
   return (
-    <div style={{ width: '100%', height: 200, display: 'flex', alignItems: 'center' }}>
-      <ResponsiveContainer width="60%">
+    <div style={{ width: '100%', height: 200, position: 'relative' }}>
+      <ResponsiveContainer width="100%" height={200}>
         <PieChart>
           <Pie
             data={chartData}
@@ -342,7 +342,7 @@ export default function ChartWidget({ chartType, title, data, sortBy }) {
   };
 
   return (
-    <div className="mini-card" style={{ padding: 16 }}>
+    <div className="mini-card" style={{ padding: 16, width: '100%', minWidth: 0 }}>
       {title && <div className="mini-card-title">{title || chartLabels[chartType] || '차트'}</div>}
       {renderChart()}
     </div>
