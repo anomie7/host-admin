@@ -244,6 +244,51 @@ const TOOLS = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'add_property_tag',
+      description: '숙소에 태그/라벨을 추가합니다. 사용자가 "이 숙소에 수익률 1위 라벨 붙여줘" 라고 하면 이 툴을 사용하세요. (데이터 조작 툴 — 주의해서 사용)',
+      parameters: {
+        type: 'object',
+        properties: {
+          property_id: { type: 'number', description: '태그를 추가할 숙소 ID' },
+          tag: { type: 'string', description: '추가할 태그 문자열 (예: "🏆 수익률 1위", "💰 고객단가 TOP3", "📈 예약 증가 중")' },
+        },
+        required: ['property_id', 'tag'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'remove_property_tag',
+      description: '숙소의 태그/라벨을 제거합니다.',
+      parameters: {
+        type: 'object',
+        properties: {
+          property_id: { type: 'number', description: '태그를 제거할 숙소 ID' },
+          tag: { type: 'string', description: '제거할 태그 문자열' },
+        },
+        required: ['property_id', 'tag'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'update_booking_status',
+      description: '예약 상태를 변경합니다. 사용자가 "예약 1번을 체크인으로 바꿔줘" 라고 하면 이 툴을 사용하세요. (데이터 조작 툴 — 주의해서 사용)',
+      parameters: {
+        type: 'object',
+        properties: {
+          booking_id: { type: 'number', description: '상태를 변경할 예약 ID' },
+          status: { type: 'string', enum: ['upcoming', 'checked_in', 'checked_out', 'cancelled'], description: '변경할 상태' },
+        },
+        required: ['booking_id', 'status'],
+      },
+    },
+  },
 ];
 
 // ===== Tool Implementations =====
@@ -464,6 +509,46 @@ function executeTool(name, args) {
       }
     }
 
+    case 'add_property_tag': {
+      const { property_id, tag } = args || {};
+      if (!property_id || !tag) return { error: 'property_id and tag are required' };
+      const db = getDb();
+      const existing = db.prepare('SELECT tags FROM properties WHERE id = ?').get(property_id);
+      if (!existing) return { error: 'Property not found' };
+      const currentTags = JSON.parse(existing.tags || '[]');
+      if (currentTags.includes(tag)) return { ok: true, tags: currentTags, message: '이미 있는 태그입니다' };
+      const newTags = [...currentTags, tag];
+      db.prepare("UPDATE properties SET tags = ?, updated_at = datetime('now') WHERE id = ?").run(JSON.stringify(newTags), property_id);
+      return { ok: true, tags: newTags, message: `"${tag}" 태그가 추가되었습니다` };
+    }
+
+    case 'remove_property_tag': {
+      const { property_id, tag } = args || {};
+      if (!property_id || !tag) return { error: 'property_id and tag are required' };
+      const db = getDb();
+      const existing = db.prepare('SELECT tags FROM properties WHERE id = ?').get(property_id);
+      if (!existing) return { error: 'Property not found' };
+      const currentTags = JSON.parse(existing.tags || '[]');
+      if (!currentTags.includes(tag)) return { ok: true, tags: currentTags, message: '해당 태그가 없습니다' };
+      const filtered = currentTags.filter(t => t !== tag);
+      db.prepare("UPDATE properties SET tags = ?, updated_at = datetime('now') WHERE id = ?").run(JSON.stringify(filtered), property_id);
+      return { ok: true, tags: filtered, message: `"${tag}" 태그가 제거되었습니다` };
+    }
+
+    case 'update_booking_status': {
+      const { booking_id, status } = args || {};
+      if (!booking_id || !status) return { error: 'booking_id and status are required' };
+      const validStatuses = ['upcoming', 'checked_in', 'checked_out', 'cancelled'];
+      if (!validStatuses.includes(status)) return { error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` };
+      const db = getDb();
+      const existing = db.prepare('SELECT * FROM bookings WHERE id = ?').get(booking_id);
+      if (!existing) return { error: 'Booking not found' };
+      db.prepare("UPDATE bookings SET status = ?, notes = CASE WHEN notes = '' THEN ? ELSE notes || ' | ' || ? END WHERE id = ?")
+        .run(status, `상태가 ${existing.status}에서 ${status}로 변경됨`, `상태가 ${existing.status}에서 ${status}로 변경됨`, booking_id);
+      const updated = db.prepare('SELECT * FROM bookings WHERE id = ?').get(booking_id);
+      return { ok: true, booking: updated, message: `예약 #${booking_id} 상태가 ${status}로 변경되었습니다` };
+    }
+
     default:
       return { error: `Unknown tool: ${name}` };
   }
@@ -603,6 +688,38 @@ execute_sql()을 쓰기 전에 먼저 호출해서 테이블과 컬럼명을 정
 1. search_properties("성수 미니멀 플랫") → property_id=3 확인
 2. execute_sql({sql: "SELECT platform, SUM(amount) as revenue FROM bookings WHERE property_id = 3 GROUP BY platform"}) → 데이터 조회
 3. 결과를 정리해서 JSON 응답
+
+## 숙소 태그 라벨 시스템
+
+숙소에 태그/라벨을 붙일 수 있습니다. properties 테이블에 tags TEXT 컬럼이 JSON 배열로 저장됩니다.
+
+### 사용 가능한 툴:
+- **add_property_tag(property_id, tag)** — 숙소에 태그 추가
+- **remove_property_tag(property_id, tag)** — 숙소 태그 제거
+
+### 사용 예시:
+- "이 숙소에 수익률 1위 라벨 붙여줘" → add_property_tag({property_id: 3, tag: "🏆 수익률 1위"})
+- "태그 제거해줘" → remove_property_tag({property_id: 3, tag: "🏆 수익률 1위"})
+
+### 태그 추천 목록 (자유롭게 사용):
+- 🏆 수익률 1위
+- 💰 고객단가 TOP3
+- 📈 예약 증가 중
+- ⭐ 게스트 만족도 높음
+- 🆕 신규 등록
+
+### 중요:
+1. **데이터가 실제로 변경됩니다** — 사용자가 명시적으로 요청할 때만 툴을 호출하세요
+2. 태그를 추가하기 전에 search_properties()나 execute_sql()로 해당 숙소가 실제로 존재하는지 확인하세요
+3. get_booking_stats_by_property()로 분석한 결과를 바탕으로 태그를 추천할 수 있습니다
+4. 예: "수익률 제일 좋은 숙소 알려줘" → 분석 결과 안내 → 사용자가 "라벨 붙여줘" → add_property_tag
+
+## 예약 상태 변경 (update_booking_status)
+
+사용자가 "예약 1번 상태를 체크인으로 변경해줘", "예약 5번 취소해줘" 라고 하면:
+1. search_bookings({ id: 1 })로 예약 존재 확인
+2. update_booking_status({ booking_id: 1, status: "checked_in" }) 실행
+3. 변경된 예약 상세를 booking-detail UI로 표시
 
 ## 예약 상세는 채팅창에 인라인으로 표시
 

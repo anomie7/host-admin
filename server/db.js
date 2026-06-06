@@ -32,6 +32,7 @@ function initSchema() {
       description TEXT DEFAULT '',
       photos TEXT DEFAULT '[]',
       platforms TEXT DEFAULT '[]',
+      tags TEXT DEFAULT '[]',
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now'))
     );
@@ -51,4 +52,9 @@ function initSchema() {
       FOREIGN KEY (property_id) REFERENCES properties(id) ON DELETE CASCADE
     );
   `);
+
+  // Add tags column if upgrading from old schema
+  try {
+    db.exec("ALTER TABLE properties ADD COLUMN tags TEXT DEFAULT '[]'");
+  } catch {} // Column already exists
 }

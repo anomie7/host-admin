@@ -26,6 +26,10 @@ export const api = {
   },
   deletePhoto: (id, photo) => request(`/properties/${id}/photos`, { method: 'DELETE', body: JSON.stringify({ photo }) }),
 
+  // Tags
+  addTag: (id, tag) => request(`/properties/${id}/tags`, { method: 'POST', body: JSON.stringify({ tag }) }),
+  removeTag: (id, tag) => request(`/properties/${id}/tags`, { method: 'DELETE', body: JSON.stringify({ tag }) }),
+
   // Bookings
   getBookings: (params = {}) => {
     const qs = new URLSearchParams(params).toString();

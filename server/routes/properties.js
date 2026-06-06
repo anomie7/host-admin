@@ -36,6 +36,7 @@ router.get('/', (req, res) => {
     ...r,
     photos: JSON.parse(r.photos || '[]'),
     platforms: JSON.parse(r.platforms || '[]'),
+    tags: JSON.parse(r.tags || '[]'),
   })));
 });
 
@@ -48,6 +49,7 @@ router.get('/:id', (req, res) => {
     ...row,
     photos: JSON.parse(row.photos || '[]'),
     platforms: JSON.parse(row.platforms || '[]'),
+    tags: JSON.parse(row.tags || '[]'),
   });
 });
 
@@ -66,6 +68,7 @@ router.post('/', (req, res) => {
     ...created,
     photos: JSON.parse(created.photos || '[]'),
     platforms: JSON.parse(created.platforms || '[]'),
+    tags: JSON.parse(created.tags || '[]'),
   });
 });
 
@@ -88,6 +91,7 @@ router.put('/:id', (req, res) => {
     ...updated,
     photos: JSON.parse(updated.photos || '[]'),
     platforms: JSON.parse(updated.platforms || '[]'),
+    tags: JSON.parse(updated.tags || '[]'),
   });
 });
 
@@ -136,6 +140,51 @@ router.delete('/:id/photos', (req, res) => {
     .run(JSON.stringify(filtered), req.params.id);
 
   res.json({ photos: filtered });
+});
+
+// POST /api/properties/:id/tags — Add a tag
+router.post('/:id/tags', (req, res) => {
+  const { tag } = req.body;
+  if (!tag || typeof tag !== 'string') return res.status(400).json({ error: 'tag string required' });
+
+  const db = getDb();
+  const existing = db.prepare('SELECT * FROM properties WHERE id = ?').get(req.params.id);
+  if (!existing) return res.status(404).json({ error: 'Property not found' });
+
+  const currentTags = JSON.parse(existing.tags || '[]');
+  if (currentTags.includes(tag)) return res.json({ tags: currentTags }); // Already exists
+
+  const newTags = [...currentTags, tag];
+  db.prepare(`UPDATE properties SET tags = ?, updated_at = datetime('now') WHERE id = ?`)
+    .run(JSON.stringify(newTags), req.params.id);
+
+  res.json({ tags: newTags });
+});
+
+// DELETE /api/properties/:id/tags — Remove a tag
+router.delete('/:id/tags', (req, res) => {
+  const { tag } = req.body;
+  if (!tag) return res.status(400).json({ error: 'tag string required' });
+
+  const db = getDb();
+  const existing = db.prepare('SELECT * FROM properties WHERE id = ?').get(req.params.id);
+  if (!existing) return res.status(404).json({ error: 'Property not found' });
+
+  const currentTags = JSON.parse(existing.tags || '[]');
+  const filtered = currentTags.filter(t => t !== tag);
+
+  db.prepare(`UPDATE properties SET tags = ?, updated_at = datetime('now') WHERE id = ?`)
+    .run(JSON.stringify(filtered), req.params.id);
+
+  res.json({ tags: filtered });
+});
+
+// GET /api/properties/:id/tags — Get tags for a property
+router.get('/:id/tags', (req, res) => {
+  const db = getDb();
+  const row = db.prepare('SELECT tags FROM properties WHERE id = ?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Property not found' });
+  res.json({ tags: JSON.parse(row.tags || '[]') });
 });
 
 export default router;

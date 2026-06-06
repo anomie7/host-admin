@@ -104,7 +104,25 @@ export default function PropertyList() {
                 )}
               </div>
               {/* Body */}
-              <div style={{ padding: 16 }}>
+              <div style={{ padding: 16, position: 'relative' }}>
+                {/* Tags — top-right corner */}
+                {p.tags && p.tags.length > 0 && (
+                  <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 8 }}>
+                    {p.tags.map(tag => (
+                      <span
+                        key={tag}
+                        style={{
+                          fontSize: 10, padding: '2px 8px', borderRadius: 10,
+                          background: tag.includes('🏆') ? 'linear-gradient(135deg, #FFD700, #FFA500)' : 'var(--accent-glow)',
+                          color: tag.includes('🏆') ? '#7c4a03' : 'var(--accent)',
+                          fontWeight: 500, letterSpacing: '-0.3px',
+                        }}
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                )}
                 <h3 style={{ fontFamily: 'var(--font-display)', fontSize: 17, fontWeight: 600, marginBottom: 4 }}>{p.name}</h3>
                 <p style={{ color: 'var(--text-secondary)', fontSize: 13, marginBottom: 12, lineClamp: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.address}</p>
                 {/* Platforms */}
