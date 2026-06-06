@@ -574,15 +574,28 @@ For complex or custom queries, first call get_db_schema() to see the table struc
 
 ### 필드 설명:
 - "message" (필수): 사용자에게 보여줄 한국어 텍스트
-- "ui" (선택): 시각적 컴포넌트 (booking-list, booking-detail, stats-card, property-card, chart, layout)
+- "ui" (데이터 응답 시 필수): 시각적 컴포넌트 (booking-list, booking-detail, stats-card, property-card, chart, layout)
 - "canvas" (선택): 대시보드용 아이템 배열 (아래 CANVAS FIELD 참고)
 
 ### 중요 규칙:
 1. 응답 전체가 하나의 JSON 객체여야 합니다. JSON 앞뒤에 아무 텍스트도 붙이지 마세요.
 2. "message" 필드는 항상 포함하세요.
-3. 적절한 경우 "ui" 필드를 포함해 데이터를 시각화하세요.
+3. **데이터 조회 응답에는 반드시 "ui" 필드를 포함해야 합니다.** 일반 텍스트만으로 응답하지 마세요.
 4. "canvas"는 오직 사용자가 대시보드 생성을 요청할 때만 포함하세요.
-5. 이후 대화에서 참조할 수 있도록, 이전 assistant 메시지에 [DATA: ...] 형식의 요약이 포함될 수 있습니다. 이는 해당 응답에서 표시한 UI 데이터의 요약이니, "이 대화를 토대로" 같은 요청 시 활용하세요.
+
+### 질문 유형별 UI 가이드 — 반드시 따를 것
+
+| 질문 유형 | 사용할 ui.type | 이유 |
+|-----------|---------------|------|
+| "이번달 수익" / "이번달 통계" / "오늘 체크인" | **layout** (2열, stats-card 2개 + chart 1개 + stats-card 1개) | 여러 지표를 한 화면에 |
+| "다음주 체크인" / "7월 예약" / "예약 목록" | **layout** (2열, stats-card + booking-list) | 요약 + 목록 함께 |
+| "예약 제일 많은 숙소" / "숙소별 실적" | **layout** (2열, chart(property-ranking) + booking-list 또는 stats-card) | 차트 + 순위 함께 |
+| "플랫폼별 수익" | **layout** (2열, chart(platform) + stats-card) | 차트 + 요약 |
+| "월별 수익 추이" | **chart** (chartType: revenue) | 차트 하나로 충분 |
+| "예약 5번 상세" | **booking-detail** | 단일 예약 정보 |
+| "강남 스튜디오 정보" | **property-card** | 숙소 정보 |
+| "대시보드/한눈에" | **canvas** 필드 사용 | 여러 차트 모아서 |
+| 인사/잡담/일반 대화 | ui 생략 가능 | 데이터 없음
 
 ## UI TYPES
 
@@ -799,8 +812,8 @@ When the user asks "예약 5번 상세로 가줘", "5번 예약 보여줘":
 ## RULES
 
 1. Always use tools to get REAL data from the database. Do NOT make up data.
-2. Summarize the data in natural Korean.
-3. Include the "ui" field with the appropriate component type to render the data visually.
+2. Summarize the data in natural Korean in "message" field.
+3. **"ui" 필드는 반드시 포함하세요.** 데이터를 조회한 응답에는 예외 없이 ui 필드를 포함해야 합니다. 위 "질문 유형별 UI 가이드"를 참고하세요.
 4. If the user is just chatting (greeting, casual talk), use the check_intent tool or just respond with message only (ui: null).
 5. Always respond in Korean.
 6. Keep messages concise and friendly.`;
