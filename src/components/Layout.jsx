@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { NavLink } from 'react-router-dom';
 import SidePanel from './SidePanel';
 
@@ -46,21 +46,31 @@ const IconCanvas = () => (
 );
 
 export default function Layout({ children, title }) {
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 768);
+    check();
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, []);
+
   return (
     <div className="app-layout">
       <nav className="sidebar" aria-label="메인 내비게이션">
         <div className="sidebar-logo" aria-hidden="true">H</div>
         <div className="sidebar-nav">
-          <NavLink to="/" end className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`} aria-label="대시보드">
+          <NavLink to="/" end className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`} aria-label="대시보드" onClick={() => setMobileOpen(false)}>
             <IconDashboard />
           </NavLink>
-          <NavLink to="/properties" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`} aria-label="숙소">
+          <NavLink to="/properties" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`} aria-label="숙소" onClick={() => setMobileOpen(false)}>
             <IconBuilding />
           </NavLink>
-          <NavLink to="/calendar" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`} aria-label="캘린더">
+          <NavLink to="/calendar" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`} aria-label="캘린더" onClick={() => setMobileOpen(false)}>
             <IconCalendar />
           </NavLink>
-          <NavLink to="/canvas" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`} aria-label="캔버스">
+          <NavLink to="/canvas" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`} aria-label="캔버스" onClick={() => setMobileOpen(false)}>
             <IconCanvas />
           </NavLink>
         </div>
@@ -68,13 +78,28 @@ export default function Layout({ children, title }) {
       <div className="main-area">
         <header className="main-header">
           <h1>{title || '호스트 관리자'}</h1>
-          <span style={{ fontSize: '12px', color: 'var(--text-dim)', fontFamily: 'var(--font-display)' }}>Warm Stay</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {isMobile && (
+              <button className="mobile-ai-toggle" onClick={() => setMobileOpen(prev => !prev)} aria-label="AI 어시스턴트" style={{
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                width: 34, height: 34, borderRadius: '50%',
+                border: '1px solid var(--border-light)', background: mobileOpen ? 'var(--accent-glow)' : 'var(--bg-elevated)',
+                color: mobileOpen ? 'var(--accent)' : 'var(--text-dim)', cursor: 'pointer', fontSize: 16,
+              }}>
+                🤖
+              </button>
+            )}
+            <span style={{ fontSize: '12px', color: 'var(--text-dim)', fontFamily: 'var(--font-display)' }}>Warm Stay</span>
+          </div>
         </header>
         <main className="main-content stagger">
           {children}
         </main>
       </div>
-      <SidePanel />
+
+      {/* Mobile overlay + toggle panel */}
+      {isMobile && mobileOpen && <div className="side-overlay" onClick={() => setMobileOpen(false)} />}
+      <SidePanel mobileOpen={isMobile ? mobileOpen : undefined} onMobileClose={isMobile ? () => setMobileOpen(false) : undefined} />
     </div>
   );
 }
