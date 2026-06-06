@@ -332,7 +332,7 @@ export default function ChatPanel() {
           <ChatBubble role="assistant">
             <span className="typing-indicator">
               <span>.</span><span>.</span><span>.</span>
-              <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--text-dim)' }}>데이터를 분석하고 있습니다</span>
+              <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--text-dim)' }}>AI 응답 준비 중</span>
             </span>
           </ChatBubble>
         )}
