@@ -735,6 +735,49 @@ update_booking_status(), add_property_tag(), remove_property_tag()
 - html: { content: "HTML with inline styles" }`;
 }
 
+function getVerifierPrompt() {
+  return `You are a VERIFIER for "Warm Stay" host admin assistant.
+
+Your ONLY job: check whether the executed result meets the user's request.
+
+## What to check
+1. Was render_ui() called? If not → FAIL (render_ui 누락)
+2. Does the UI type match the user's request?
+   - User asked for "chart", "graph", "추이" → should be chart
+   - User asked for "list", "목록" → should be booking-list or table
+   - User asked for "summary", "요약", "통계" → should be stats-card or chart(summary)
+3. Is there actual data? Empty arrays → FAIL (데이터 없음)
+4. Did the executor follow the plan? If plan had execute_sql but executor skipped it → FAIL
+
+## Output format (JSON ONLY)
+If pass:
+{ "verdict": "pass", "reason": "적절한 UI 타입으로 결과 표시됨" }
+If fail:
+{ "verdict": "retry", "reason": "사용자가 차트를 요청했지만 stats-card로 응답함. 차트로 다시 표시 필요." }
+{ "verdict": "fallback", "reason": "치명적 오류" }
+
+## Rules
+- Be strict but reasonable. Single stats-card is fine for simple queries.
+- For complex queries, expect multiple data points.
+- If uncertain → pass (don't block unnecessarily)`;
+}
+
+function getReporterPrompt() {
+  const today = new Date().toISOString().slice(0, 10);
+  return `You are a REPORTER for "Warm Stay" host admin assistant. Today is ${today}.
+
+Your ONLY job: write a clear Korean summary of the results.
+You CANNOT call tools. You have access to the execution results.
+
+## Output format
+{ "message": "한국어 요약 (2-3문장, 자연스럽게)" }
+
+## Rules
+- Be concise and natural
+- Include key numbers
+- Do NOT include "ui" field`;
+}
+
 // ===== Chat Handler =====
 
 // Strip markdown bold from messages
@@ -1092,7 +1135,289 @@ router.post('/', async (req, res) => {
   }
 });
 
-// ===== SSE Streaming endpoint with Plan-First progress =====
+// ===== Orchestrator =====
+
+class Orchestrator {
+  constructor(send, userMessages) {
+    this.send = send;
+    this.userMessages = userMessages;
+    this.state = {
+      phase: 'init',
+      plan: null,
+      planSteps: [],
+      pendingUI: null,
+      lastDataTool: null,
+      dataModifyingTools: new Set(),
+      attempt: 0,
+      maxAttempts: 3,
+      verdict: null,
+      executionLog: [],
+    };
+  }
+
+  async run() {
+    await this.phase('planning');
+    const planned = await this.plan();
+    if (!planned) return;
+
+    while (this.state.attempt < this.state.maxAttempts) {
+      this.state.attempt++;
+      await this.phase('executing');
+      await this.execute();
+
+      await this.phase('verifying');
+      const verdict = await this.verify();
+
+      if (verdict === 'pass') break;
+
+      if (this.state.attempt >= this.state.maxAttempts) {
+        console.log(`⚠️ Orchestrator: max attempts (${this.state.maxAttempts}) reached, falling back`);
+        await this.phase('reporting');
+        await this.report();
+        return;
+      }
+
+      console.log(`🔄 Orchestrator: retry ${this.state.attempt}/${this.state.maxAttempts} — ${this.state.verdict?.reason || 'unknown'}`);
+      // Reset UI for retry
+      this.state.pendingUI = null;
+    }
+
+    await this.phase('reporting');
+    await this.report();
+  }
+
+  async phase(name) {
+    this.state.phase = name;
+    this.send('phase', { phase: name, attempt: this.state.attempt });
+  }
+
+  async plan() {
+    // Phase 1: Planner
+    const plannerLog = [{ role: 'system', content: getPlannerPrompt() }, ...this.userMessages];
+    const response = await callDeepSeek(plannerLog, false);
+    if (response.error) {
+      this.send('complete', { message: 'AI 응답 생성 중 오류가 발생했습니다.', ui: null });
+      return false;
+    }
+
+    const choice = response.choices?.[0]?.message;
+    if (!choice || !choice.content) {
+      return await this.planFallback();
+    }
+
+    const parsed = parseAIResponse(choice.content);
+    if (parsed && parsed.plan && Array.isArray(parsed.plan) && parsed.plan.length > 0) {
+      this.state.plan = parsed.plan;
+      this.state.planSteps = parsed.plan.map(s => ({
+        label: getToolLabel(s.split('(')[0]),
+        status: 'pending'
+      }));
+      if (this.state.planSteps.length > 0 && !this.state.planSteps[this.state.planSteps.length - 1].label.includes('UI')) {
+        this.state.planSteps.push({ label: '🎨 UI 생성', status: 'pending' });
+      }
+      this.send('plan', { steps: this.state.planSteps.map(s => s.label) });
+      console.log(`📋 Planner: ${JSON.stringify(this.state.planSteps.map(s => s.label))}`);
+      return true;
+    }
+
+    // Retry planner once
+    const retryLog = [{ role: 'system', content: getPlannerPrompt() + '\n\nIMPORTANT: You MUST output a JSON plan.' }, ...this.userMessages];
+    const retryResponse = await callDeepSeek(retryLog, false);
+    if (!retryResponse.error) {
+      const retryChoice = retryResponse.choices?.[0]?.message;
+      if (retryChoice && retryChoice.content) {
+        const retryParsed = parseAIResponse(retryChoice.content);
+        if (retryParsed && retryParsed.plan && Array.isArray(retryParsed.plan) && retryParsed.plan.length > 0) {
+          this.state.plan = retryParsed.plan;
+          this.state.planSteps = retryParsed.plan.map(s => ({
+            label: getToolLabel(s.split('(')[0]),
+            status: 'pending'
+          }));
+          if (this.state.planSteps.length > 0 && !this.state.planSteps[this.state.planSteps.length - 1].label.includes('UI')) {
+            this.state.planSteps.push({ label: '🎨 UI 생성', status: 'pending' });
+          }
+          this.send('plan', { steps: this.state.planSteps.map(s => s.label) });
+          console.log(`📋 Planner (retry): ${JSON.stringify(this.state.planSteps.map(s => s.label))}`);
+          return true;
+        }
+      }
+    }
+
+    return await this.planFallback();
+  }
+
+  async planFallback() {
+    const autoResult = autoQuery(this.userMessages);
+    if (autoResult) {
+      this.state.planSteps = [{ label: '🔎 데이터 분석', status: 'completed' }];
+      this.send('plan', { steps: ['🔎 데이터 분석'] });
+      this.send('step', { index: 0, status: 'completed' });
+      this.send('complete', { message: autoResult.count + '건 조회했습니다.', ui: autoResult.ui });
+    } else {
+      this.send('complete', { message: '죄송합니다, 요청을 이해하지 못했습니다.', ui: null });
+    }
+    return false;
+  }
+
+  sendStep(index, status) {
+    if (index >= 0 && index < this.state.planSteps.length) {
+      this.state.planSteps[index].status = status;
+      this.send('step', { index, status, steps: this.state.planSteps.map(s => s.label) });
+    }
+  }
+
+  async execute() {
+    const executorLog = [
+      { role: 'system', content: getExecutorPrompt() },
+      ...this.userMessages,
+      { role: 'assistant', content: `My plan: ${JSON.stringify(this.state.plan)}. Now let me execute it.` },
+    ];
+
+    let currentLog = executorLog;
+    let toolRound = 0;
+    const MAX_TOOL_ROUNDS = 20;
+
+    while (toolRound < MAX_TOOL_ROUNDS) {
+      const response = await callDeepSeek(currentLog, true);
+      if (response.error) return;
+
+      const choice = response.choices?.[0]?.message;
+      if (!choice) return;
+
+      // No tool calls → final text response
+      if (!choice.tool_calls || choice.tool_calls.length === 0) {
+        const content = choice.content || '';
+        this.state.executionLog.push({ type: 'text', content });
+        // Store final content for reporter
+        this.state.finalContent = content;
+        this.state.executionDone = true;
+        return;
+      }
+
+      // Process tool calls
+      currentLog.push(choice);
+
+      for (const tc of choice.tool_calls) {
+        if (tc.type !== 'function') continue;
+        const { name, arguments: argsStr } = tc.function;
+        let args = {};
+        try { args = JSON.parse(argsStr); } catch {}
+
+        const label = getToolLabel(name);
+        this.send('tool', { name, label, status: 'running' });
+
+        const exactIdx = this.state.planSteps.findIndex(s => s.label === label);
+        const firstPendingIdx = this.state.planSteps.findIndex(s => s.status === 'pending');
+        const activeIdx = exactIdx >= 0 ? exactIdx : firstPendingIdx;
+        if (activeIdx >= 0) this.sendStep(activeIdx, 'running');
+
+        if (['add_property_tag', 'remove_property_tag', 'update_booking_status'].includes(name)) {
+          this.state.dataModifyingTools.add(name);
+        }
+
+        if (name === 'render_ui') {
+          let props = args.props;
+          if (typeof props === 'string') { try { props = JSON.parse(props); } catch {} }
+          this.state.pendingUI = { type: args.type, props: props };
+          console.log(`🎨 Executor render_ui: ${args.type}`);
+          this.send('tool', { name, label, status: 'done' });
+          if (activeIdx >= 0) this.sendStep(activeIdx, 'completed');
+          this.state.executionLog.push({ type: 'render_ui', ui: this.state.pendingUI });
+          currentLog.push({ role: 'tool', tool_call_id: tc.id, content: JSON.stringify({ ok: true, rendered: args.type }) });
+          continue;
+        }
+
+        const result = executeTool(name, args);
+        if (!['get_db_schema', 'render_ui'].includes(name)) {
+          this.state.lastDataTool = { name, result };
+        }
+
+        this.state.executionLog.push({ type: 'tool', name, result });
+        this.send('tool', { name, label, status: 'done' });
+        if (activeIdx >= 0) this.sendStep(activeIdx, 'completed');
+
+        currentLog.push({
+          role: 'tool',
+          tool_call_id: tc.id,
+          content: JSON.stringify(result),
+        });
+      }
+      toolRound++;
+    }
+  }
+
+  async verify() {
+    const { pendingUI, lastDataTool, plan, executionLog } = this.state;
+
+    // Check 1: render_ui called?
+    if (!pendingUI) {
+      if (lastDataTool) {
+        const autoUI = autoGenerateUI(lastDataTool);
+        if (autoUI) {
+          this.state.pendingUI = autoUI;
+          this.state.verdict = { verdict: 'pass', reason: '자동 UI 생성 완료' };
+          this.send('verdict', this.state.verdict);
+          return 'pass';
+        }
+      }
+      this.state.verdict = { verdict: 'retry', reason: 'render_ui가 누락되었습니다. UI를 포함하여 다시 실행하세요.' };
+      this.send('verdict', this.state.verdict);
+      return 'retry';
+    }
+
+    // Check 2: Empty data?
+    const hasData = pendingUI.props && (
+      (pendingUI.type === 'booking-list' && pendingUI.props.bookings?.length > 0) ||
+      (pendingUI.type === 'chart' && pendingUI.props.data?.length > 0) ||
+      (pendingUI.type === 'table' && pendingUI.props.rows?.length > 0) ||
+      (pendingUI.type === 'stats-card' && pendingUI.props.value) ||
+      (pendingUI.type === 'html' && pendingUI.props.content)
+    );
+    if (!hasData) {
+      this.state.verdict = { verdict: 'retry', reason: 'UI에 데이터가 없습니다. 데이터를 포함하여 다시 실행하세요.' };
+      this.send('verdict', this.state.verdict);
+      return 'retry';
+    }
+
+    // Pass
+    this.state.verdict = { verdict: 'pass', reason: '정상 처리되었습니다.' };
+    this.send('verdict', this.state.verdict);
+    return 'pass';
+  }
+
+  async report() {
+    const { pendingUI, lastDataTool, dataModifyingTools, executionDone, finalContent } = this.state;
+
+    // Mark remaining steps completed
+    this.state.planSteps.forEach((_, i) => this.sendStep(i, 'completed'));
+
+    // If we have a result from the executor text response, use it
+    if (executionDone && finalContent) {
+      const result = parseAIResponse(finalContent);
+      if (result) {
+        if (dataModifyingTools.size > 0) result._refetch = 'properties';
+        if (this.state.pendingUI) result.ui = this.state.pendingUI;
+        this.send('complete', result);
+        return;
+      }
+    }
+
+    // Fallback: build from pendingUI
+    if (pendingUI) {
+      const result = { message: '조회가 완료되었습니다.', ui: pendingUI };
+      if (dataModifyingTools.size > 0) result._refetch = 'properties';
+      this.send('complete', result);
+    } else if (lastDataTool) {
+      const autoUI = autoGenerateUI(lastDataTool);
+      const message = autoUI ? '조회 결과를 정리했습니다.' : '데이터를 확인해주세요.';
+      this.send('complete', { message, ui: autoUI || null });
+    } else {
+      this.send('complete', { message: '죄송합니다, 요청을 처리하지 못했습니다.', ui: null });
+    }
+  }
+}
+
+// ===== SSE Streaming endpoint with Orchestrator =====
 
 router.post('/stream', async (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
@@ -1113,192 +1438,8 @@ router.post('/stream', async (req, res) => {
     }
 
     const userMessages = messages.filter(m => m.role !== 'system');
-    const dataModifyingTools = new Set();
-    let pendingUI = null;
-    let lastDataTool = null;
-    let planSteps = [];
-
-    const sendStep = (index, status) => {
-      if (index >= 0 && index < planSteps.length) {
-        planSteps[index].status = status;
-        send('step', { index, status, steps: planSteps.map(s => s.label) });
-      }
-    };
-
-    // =============================================
-    // PHASE 1: PLANNER (no tools — AI outputs plan)
-    // =============================================
-    const plannerLog = [{ role: 'system', content: getPlannerPrompt() }, ...userMessages];
-    const plannerResponse = await callDeepSeek(plannerLog, false);
-    if (plannerResponse.error) {
-      send('complete', { message: 'AI 응답 생성 중 오류가 발생했습니다.', ui: null });
-      return res.end();
-    }
-    const plannerChoice = plannerResponse.choices?.[0]?.message;
-    let aiPlanMessage = null;
-    let planContent = '';
-
-    if (plannerChoice && plannerChoice.content) {
-      planContent = plannerChoice.content;
-      // Parse the plan from JSON
-      const parsed = parseAIResponse(planContent);
-      if (parsed && parsed.plan && Array.isArray(parsed.plan) && parsed.plan.length > 0) {
-        planSteps = parsed.plan.map(s => ({
-          label: getToolLabel(s.split('(')[0]),
-          status: 'pending'
-        }));
-        // If last step isn't render_ui, append it
-        if (planSteps.length > 0 && !planSteps[planSteps.length - 1].label.includes('UI')) {
-          planSteps.push({ label: '🎨 UI 생성', status: 'pending' });
-        }
-        send('plan', { steps: planSteps.map(s => s.label) });
-        aiPlanMessage = parsed.plan;
-        console.log(`📋 Planner: ${JSON.stringify(planSteps.map(s => s.label))}`);
-      }
-    }
-
-    // Fallback: if planner didn't produce a valid plan, auto-generate
-    if (!aiPlanMessage && planSteps.length === 0) {
-      // Try a second planner call with stronger instruction
-      const retryLog = [{ role: 'system', content: getPlannerPrompt() + '\n\nIMPORTANT: You MUST output a JSON plan. No other text.' }, ...userMessages];
-      const retryResponse = await callDeepSeek(retryLog, false);
-      const retryChoice = retryResponse.choices?.[0]?.message;
-      if (retryChoice && retryChoice.content) {
-        const parsed = parseAIResponse(retryChoice.content);
-        if (parsed && parsed.plan && Array.isArray(parsed.plan) && parsed.plan.length > 0) {
-          planSteps = parsed.plan.map(s => ({
-            label: getToolLabel(s.split('(')[0]),
-            status: 'pending'
-          }));
-          if (planSteps.length > 0 && !planSteps[planSteps.length - 1].label.includes('UI')) {
-            planSteps.push({ label: '🎨 UI 생성', status: 'pending' });
-          }
-          send('plan', { steps: planSteps.map(s => s.label) });
-          aiPlanMessage = parsed.plan;
-          console.log(`📋 Planner (retry): ${JSON.stringify(planSteps.map(s => s.label))}`);
-        }
-      }
-    }
-
-    // Still no plan? Use auto-query fallback
-    if (!aiPlanMessage) {
-      const autoResult = autoQuery(userMessages);
-      if (autoResult) {
-        planSteps = [{ label: '🔎 데이터 분석', status: 'completed' }];
-        send('plan', { steps: ['🔎 데이터 분석'] });
-        sendStep(0, 'completed');
-        send('complete', { message: autoResult.count + '건 조회했습니다.', ui: autoResult.ui });
-      } else {
-        send('complete', { message: '죄송합니다, 요청을 이해하지 못했습니다.', ui: null });
-      }
-      return res.end();
-    }
-
-    // =============================================
-    // PHASE 2: EXECUTOR (tools ON — AI executes plan)
-    // =============================================
-    const plannerSummary = `[PLAN] ${JSON.stringify(aiPlanMessage)}\n\nUser message: ${userMessages.map(m => m.content || '').join(' ')}\n\nExecute this plan now using tools.`;
-    const executorLog = [
-      { role: 'system', content: getExecutorPrompt() },
-      ...userMessages,
-      { role: 'assistant', content: `My plan: ${JSON.stringify(aiPlanMessage)}. Now let me execute it.` },
-    ];
-
-    let currentLog = executorLog;
-    let toolRound = 0;
-    const MAX_TOOL_ROUNDS = 20;
-
-    while (toolRound < MAX_TOOL_ROUNDS) {
-      const response = await callDeepSeek(currentLog, true);
-      if (response.error) {
-        send('complete', { message: 'AI 응답 생성 중 오류가 발생했습니다.', ui: null });
-        return res.end();
-      }
-
-      const choice = response.choices?.[0]?.message;
-      if (!choice) {
-        send('complete', { message: 'AI 응답을 받지 못했습니다.', ui: null });
-        return res.end();
-      }
-
-      // No tool calls → final text response
-      if (!choice.tool_calls || choice.tool_calls.length === 0) {
-        const content = choice.content || '';
-        const result = parseAIResponse(content);
-        if (result) {
-          if (dataModifyingTools.size > 0) result._refetch = 'properties';
-          if (pendingUI) result.ui = pendingUI;
-          // Mark remaining steps completed
-          planSteps.forEach((_, i) => sendStep(i, 'completed'));
-          send('complete', result);
-        } else {
-          planSteps.forEach((_, i) => sendStep(i, 'completed'));
-          send('complete', { message: cleanMessage(content), ui: pendingUI || null });
-        }
-        return res.end();
-      }
-
-      // Process tool calls
-      currentLog.push(choice);
-
-      for (const tc of choice.tool_calls) {
-        if (tc.type !== 'function') continue;
-        const { name, arguments: argsStr } = tc.function;
-        let args = {};
-        try { args = JSON.parse(argsStr); } catch {}
-
-        const label = getToolLabel(name);
-        send('tool', { name, label, status: 'running' });
-
-        // Find step index
-        const exactIdx = planSteps.findIndex(s => s.label === label);
-        const firstPendingIdx = planSteps.findIndex(s => s.status === 'pending');
-        const activeIdx = exactIdx >= 0 ? exactIdx : firstPendingIdx;
-        if (activeIdx >= 0) sendStep(activeIdx, 'running');
-
-        if (['add_property_tag', 'remove_property_tag', 'update_booking_status'].includes(name)) {
-          dataModifyingTools.add(name);
-        }
-
-        if (name === 'render_ui') {
-          // Ensure props is parsed as object
-          let props = args.props;
-          if (typeof props === 'string') { try { props = JSON.parse(props); } catch {} }
-          pendingUI = { type: args.type, props: props };
-          console.log(`🎨 Executor render_ui: ${args.type}`);
-          send('tool', { name, label, status: 'done' });
-          if (activeIdx >= 0) sendStep(activeIdx, 'completed');
-          currentLog.push({ role: 'tool', tool_call_id: tc.id, content: JSON.stringify({ ok: true, rendered: args.type }) });
-          continue;
-        }
-
-        const result = executeTool(name, args);
-        if (!['get_db_schema', 'render_ui'].includes(name)) {
-          lastDataTool = { name, result };
-        }
-
-        send('tool', { name, label, status: 'done' });
-        if (activeIdx >= 0) sendStep(activeIdx, 'completed');
-
-        currentLog.push({
-          role: 'tool',
-          tool_call_id: tc.id,
-          content: JSON.stringify(result),
-        });
-      }
-      toolRound++;
-    }
-
-    // Max rounds — fallback
-    planSteps.forEach((_, i) => sendStep(i, 'completed'));
-    if (pendingUI) {
-      send('complete', { message: '조회 완료', ui: pendingUI });
-    } else if (lastDataTool) {
-      const autoUI = autoGenerateUI(lastDataTool);
-      send('complete', { message: '조회 완료', ui: autoUI || null });
-    } else {
-      send('complete', { message: '조회 완료', ui: null });
-    }
+    const orchestrator = new Orchestrator(send, userMessages);
+    await orchestrator.run();
     res.end();
 
   } catch (err) {
