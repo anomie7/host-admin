@@ -1070,7 +1070,7 @@ router.post('/', async (req, res) => {
   }
 });
 
-// ===== SSE Streaming endpoint =====
+// ===== SSE Streaming endpoint with Plan-First progress =====
 
 router.post('/stream', async (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
@@ -1093,13 +1093,24 @@ router.post('/stream', async (req, res) => {
     const userMessages = messages.filter(m => m.role !== 'system');
     const fullMessages = [{ role: 'system', content: getSystemPrompt() }, ...userMessages];
     const dataModifyingTools = new Set();
+    let pendingUI = null;
+    let lastDataTool = null;
 
     let currentLog = fullMessages;
     let toolRound = 0;
-    let finalResult = null;
+    let planSteps = []; // Track plan: [{label, status}]
+    let planSent = false;
+
+    // Helper: send step event
+    const sendStep = (index, status) => {
+      if (index >= 0 && index < planSteps.length) {
+        planSteps[index].status = status;
+        send('step', { index, status, steps: planSteps.map(s => s.label) });
+      }
+    };
 
     for (let round = 0; round < 20; round++) {
-      const response = await callDeepSeek(currentLog, round === 0 ? true : true);
+      const response = await callDeepSeek(currentLog, round === 0 || true);
       if (response.error === 'NO_API_KEY') {
         send('complete', { message: 'AI 어시스턴트를 사용하려면 DeepSeek API 키가 필요합니다.', ui: null });
         return res.end();
@@ -1115,12 +1126,39 @@ router.post('/stream', async (req, res) => {
         return res.end();
       }
 
+      // On first round, extract plan from AI content
+      if (round === 0 && choice.content && !planSent) {
+        // Try to extract plan from JSON
+        const planMatch = choice.content.match(/"plan"\s*:\s*(\[[\s\S]*?(?<!\\)"\])/);
+        if (planMatch) {
+          try {
+            const plan = JSON.parse(planMatch[1]);
+            if (Array.isArray(plan) && plan.length > 0) {
+              planSteps = plan.map(s => ({
+                label: getToolLabel(s.split('(')[0]),
+                status: 'pending'
+              }));
+              send('plan', { steps: planSteps.map(s => s.label) });
+              planSent = true;
+              console.log(`📋 SSE AI plan: ${JSON.stringify(planSteps.map(s => s.label))}`);
+            }
+          } catch {}
+        }
+      }
+
       // If no tool calls, we have the final response
       if (!choice.tool_calls || choice.tool_calls.length === 0) {
         const content = choice.content || '';
         const result = parseAIResponse(content);
         if (result) {
           if (dataModifyingTools.size > 0) result._refetch = 'properties';
+          // Auto-generate plan if none yet
+          if (!planSent && planSteps.length === 0) {
+            planSteps = [{ label: '🔎 데이터 분석', status: 'completed' }];
+            send('plan', { steps: planSteps.map(s => s.label) });
+          }
+          // Mark all steps completed
+          planSteps.forEach((_, i) => sendStep(i, 'completed'));
           send('complete', result);
         } else {
           send('complete', { message: cleanMessage(content), ui: null });
@@ -1130,6 +1168,45 @@ router.post('/stream', async (req, res) => {
 
       // Process tool calls
       currentLog.push(choice);
+      
+      // Auto-generate plan from first batch of tool calls
+      if (!planSent) {
+        // Get all data tools from this batch
+        const newDataTools = choice.tool_calls
+          .filter(tc => tc.function?.name !== 'render_ui')
+          .map(tc => getToolLabel(tc.function.name));
+        // Add render_ui at the end if any data tools exist
+        if (newDataTools.length > 0) {
+          // Also include render_ui
+          const allSteps = [...newDataTools, '🎨 UI 생성'];
+          planSteps = allSteps.map(label => ({ label, status: 'pending' }));
+          send('plan', { steps: planSteps.map(s => s.label) });
+          planSent = true;
+          console.log(`📋 SSE auto-plan: ${JSON.stringify(planSteps.map(s => s.label))}`);
+        }
+      } else {
+        // Plan already exists, but new data tools might appear in later rounds
+        // Append them to the plan if they're not already there
+        for (const tc of choice.tool_calls) {
+          if (tc.function?.name === 'render_ui') continue;
+          const label = getToolLabel(tc.function.name);
+          const alreadyInPlan = planSteps.some(s => s.label === label);
+          if (!alreadyInPlan) {
+            // Insert before the last render_ui step (or at end)
+            const renderUiIdx = planSteps.findIndex(s => s.label === '🎨 UI 생성');
+            if (renderUiIdx >= 0) {
+              planSteps.splice(renderUiIdx, 0, { label, status: 'pending' });
+            } else {
+              planSteps.push({ label, status: 'pending' });
+            }
+            // Re-send full plan
+            send('plan', { steps: planSteps.map(s => s.label) });
+            console.log(`📋 SSE plan extended: +${label}`);
+          }
+        }
+      }
+
+      let stepIndex = 0;
       for (const tc of choice.tool_calls) {
         if (tc.type !== 'function') continue;
         const { name, arguments: argsStr } = tc.function;
@@ -1139,34 +1216,58 @@ router.post('/stream', async (req, res) => {
         const label = getToolLabel(name);
         send('tool', { name, label, status: 'running' });
 
+        // Find the best matching step: exact label match, then first pending
+        const exactIdx = planSteps.findIndex(s => s.label === label);
+        const firstPendingIdx = planSteps.findIndex(s => s.status === 'pending');
+        const activeIdx = exactIdx >= 0 ? exactIdx : firstPendingIdx;
+        
+        if (activeIdx >= 0 && activeIdx < planSteps.length) {
+          sendStep(activeIdx, 'running');
+        }
+
         if (['add_property_tag', 'remove_property_tag', 'update_booking_status'].includes(name)) {
           dataModifyingTools.add(name);
         }
+
+        // Intercept render_ui
+        if (name === 'render_ui') {
+          pendingUI = { type: args.type, props: args.props };
+          console.log(`🎨 SSE render_ui: ${args.type}`);
+          send('tool', { name, label, status: 'done' });
+          if (activeIdx >= 0) sendStep(activeIdx, 'completed');
+          currentLog.push({ role: 'tool', tool_call_id: tc.id, content: JSON.stringify({ ok: true, rendered: args.type }) });
+          stepIndex++;
+          continue;
+        }
+
+        // Execute the tool
+        const startTime = Date.now();
         const result = executeTool(name, args);
-        send('tool', { name, label, status: 'done' });
+        const elapsed = Date.now() - startTime;
+        
+        // Track last data tool for fallback
+        if (!['get_db_schema', 'render_ui'].includes(name)) {
+          lastDataTool = { name, result };
+        }
+
+        send('tool', { name, label, status: 'done', elapsed });
+        if (activeIdx >= 0) sendStep(activeIdx, 'completed');
 
         currentLog.push({
           role: 'tool',
           tool_call_id: tc.id,
           content: JSON.stringify(result),
         });
+        stepIndex++;
       }
     }
 
-    // Max rounds reached — fallback
-    const lastTool = [...currentLog].reverse().find(m => m.role === 'tool');
-    if (lastTool) {
-      try {
-        const td = JSON.parse(lastTool.content);
-        send('complete', {
-          message: '조회 결과를 정리했습니다.',
-          ui: { type: 'stats-card', props: { label: '조회 결과', value: `${Array.isArray(td) ? td.length : 1}건` } },
-        });
-      } catch {
-        send('complete', { message: '데이터 조회가 완료되었습니다.', ui: null });
-      }
+    // Max rounds — fallback
+    if (pendingUI) {
+      send('complete', { message: '조회 완료', ui: pendingUI });
     } else {
-      send('complete', { message: '데이터 조회가 완료되었습니다.', ui: null });
+      const autoUI = autoGenerateUI(lastDataTool);
+      send('complete', { message: '조회 완료', ui: autoUI || null });
     }
     res.end();
 

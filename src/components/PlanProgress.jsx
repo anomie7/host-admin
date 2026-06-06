@@ -17,27 +17,26 @@ const STEP_LABELS = {
 };
 
 function getStepLabel(step) {
+  if (!step) return '';
+  // If already a friendly label (starts with emoji or contains 한글), use as-is
+  if (/^[🌀📋🗄️🔎🎨🏷️🔄📊📈📐📅📋🧪✅▶️○💰]/.test(step) || /[가-힣]/.test(step)) {
+    return step;
+  }
+  // Raw tool name like "execute_sql()" or "get_db_schema()"
   const name = step.split('(')[0];
   return STEP_LABELS[name] || `🔧 ${name}`;
 }
 
-function getStepTooltip(step) {
-  // Show truncated args
-  const match = step.match(/\(([\s\S]*)\)/);
-  if (match) {
-    const args = match[1].trim();
-    return args.length > 60 ? args.slice(0, 60) + '…' : args;
-  }
-  return '';
-}
-
-export default function PlanProgress({ plan, currentStep, completedSteps, error }) {
+export default function PlanProgress({ plan, currentStep, completedSteps }) {
   if (!plan || plan.length === 0) return null;
 
   const steps = plan.map((step, i) => {
     let status = 'pending';
-    if (completedSteps && completedSteps.includes(i)) status = 'completed';
-    if (currentStep === i) status = error ? 'error' : 'running';
+    if (completedSteps) {
+      if (completedSteps instanceof Set && completedSteps.has(i)) status = 'completed';
+      else if (Array.isArray(completedSteps) && completedSteps.includes(i)) status = 'completed';
+    }
+    if (currentStep === i) status = 'running';
     return { index: i, text: step, status };
   });
 
@@ -76,7 +75,6 @@ export default function PlanProgress({ plan, currentStep, completedSteps, error 
                    step.status === 'running' ? 'var(--accent)' :
                    'var(--text-primary)',
           }}
-          title={getStepTooltip(step.text)}
         >
           <span style={{ width: 16, textAlign: 'center', flexShrink: 0 }}>
             {STEP_ICONS[step.status]}

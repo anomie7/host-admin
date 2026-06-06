@@ -27,11 +27,15 @@ export default function ChatPanel() {
     setMessages(prev => [...prev, userMsg]);
     setLoading(true);
 
+    // Plan tracking state
+    const planState = { steps: [], currentStep: -1, completedSteps: new Set() };
+    let finalMessage = '';
+    let finalUI = null;
+    let uiArrived = false;
+
     try {
-      // Include UI data summaries in the message history so AI can reference past queries
       const messagesForApi = [...messages, userMsg].map(m => {
         let content = m.content;
-        // If assistant message has UI data (stats, bookings), append summary for context
         if (m.role === 'assistant' && m.ui) {
           const uiData = m.ui;
           if (uiData.type === 'stats-card') {
@@ -54,37 +58,133 @@ export default function ChatPanel() {
             content += `\n[DATA: 표 ${uiData.props?.rows?.length || 0}행]`;
           }
         }
-        // Also note if canvas was added
         if (m.canvasAdded) {
           content += '\n[DATA: 캔버스에 대시보드 추가됨]';
         }
         return { role: m.role, content };
       });
 
-      const res = await fetch('/api/chat', {
+      const res = await fetch('/api/chat/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ messages: messagesForApi }),
       });
+
       if (!res.ok) throw new Error('API error');
-      const data = await res.json();
 
-      const assistantMsg = { role: 'assistant', content: data.message, ui: data.ui || null, plan: data.plan || null };
+      // Read SSE stream
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let currentEvent = '';
+      let currentData = '';
 
-      // If AI returned canvas payload, create a NEW canvas session (never overwrites)
-      if (data.canvas && data.canvas.items && data.canvas.items.length > 0) {
-        const title = data.canvas.title || '대시보드';
-        canvas.createSession(title, data.canvas.items);
-        assistantMsg.canvasAdded = true;
-        setTimeout(() => { navigate('/canvas'); }, 500);
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || ''; // Keep incomplete line
+
+        for (const line of lines) {
+          if (line.startsWith('event: ')) {
+            currentEvent = line.slice(7).trim();
+          } else if (line.startsWith('data: ')) {
+            currentData = line.slice(6);
+          } else if (line === '') {
+            // Empty line = event delimiter
+            if (currentEvent && currentData) {
+              try {
+                const data = JSON.parse(currentData);
+
+                switch (currentEvent) {
+                  case 'plan':
+                    planState.steps = data.steps || [];
+                    // Add an assistant message with plan to show progress
+                    setMessages(prev => {
+                      // Check if we already have a plan message for this request
+                      const last = prev[prev.length - 1];
+                      if (last && last._isPlan) {
+                        // Update existing plan message
+                        return prev.map(m => m._isPlan ? { ...m, plan: data.steps } : m);
+                      }
+                      return prev;
+                    });
+                    // Create a plan message
+                    setMessages(prev => [...prev, {
+                      role: 'assistant',
+                      _isPlan: true,
+                      plan: data.steps,
+                      content: '',
+                    }]);
+                    break;
+
+                  case 'step':
+                    if (data.index >= 0) {
+                      const status = data.status;
+                      if (status === 'running') {
+                        planState.currentStep = data.index;
+                      } else if (status === 'completed') {
+                        planState.completedSteps.add(data.index);
+                      }
+                      // Update the plan message with current state
+                      const currentSteps = data.steps || planState.steps;
+                      setMessages(prev => prev.map(m => {
+                        if (m._isPlan) {
+                          // Safely determine completed steps array
+                          const prevCompleted = Array.isArray(m._planCompletedSteps) ? m._planCompletedSteps : [];
+                          const newCompleted = status === 'completed' && !prevCompleted.includes(data.index)
+                            ? [...prevCompleted, data.index]
+                            : prevCompleted;
+                          return {
+                            ...m,
+                            plan: currentSteps,
+                            _planCurrentStep: status === 'running' ? data.index : m._planCurrentStep,
+                            _planCompletedSteps: newCompleted,
+                          };
+                        }
+                        return m;
+                      }));
+                    }
+                    break;
+
+                  case 'complete':
+                    finalMessage = data.message || '';
+                    finalUI = data.ui || null;
+                    uiArrived = true;
+                    // Handle canvas if present
+                    if (data.canvas && data.canvas.items && data.canvas.items.length > 0) {
+                      const title = data.canvas.title || '대시보드';
+                      canvas.createSession(title, data.canvas.items);
+                      setTimeout(() => { navigate('/canvas'); }, 500);
+                    }
+                    // Handle data modification refetch
+                    if (data._refetch === 'properties') {
+                      window.dispatchEvent(new CustomEvent('property-data-changed'));
+                    }
+                    // Remove plan message, add final assistant message
+                    setMessages(prev => prev.filter(m => !m._isPlan));
+                    setMessages(prev => [...prev, {
+                      role: 'assistant',
+                      content: finalMessage,
+                      ui: finalUI || null,
+                    }]);
+                    break;
+                }
+              } catch (e) {
+                console.error('SSE parse error:', e);
+              }
+            }
+            currentEvent = '';
+            currentData = '';
+          }
+        }
       }
 
-      // If AI modified data (tags, booking status), broadcast refresh event
-      if (data._refetch === 'properties') {
-        window.dispatchEvent(new CustomEvent('property-data-changed'));
-      }
+      // Clean up: remove any lingering plan messages
+      setMessages(prev => prev.filter(m => !m._isPlan));
 
-      setMessages(prev => [...prev, assistantMsg]);
     } catch (err) {
       const errMsg = err.message === 'API error'
         ? 'AI 응답을 처리하는 중 오류가 발생했습니다. 다시 시도해주세요.'
@@ -194,7 +294,14 @@ export default function ChatPanel() {
       <div className="chat-messages" ref={listRef}>
         {messages.map((msg, i) => (
           <ChatBubble key={i} role={msg.role}>
-            {msg.plan && (
+            {msg._isPlan && msg.plan && (
+              <PlanProgress
+                plan={msg.plan}
+                currentStep={msg._planCurrentStep}
+                completedSteps={msg._planCompletedSteps || new Set()}
+              />
+            )}
+            {!msg._isPlan && msg.plan && (
               <PlanProgress plan={msg.plan} completedSteps={msg.plan.map((_, i) => i)} />
             )}
             {msg.content.split('\n').map((line, j) => (
