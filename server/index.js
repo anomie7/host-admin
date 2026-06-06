@@ -241,7 +241,31 @@ app.get('/api/bookings/export/csv', (req, res) => {
 // Serve built frontend (for production / Railway)
 const distPath = path.join(__dirname, '..', 'dist');
 if (fs.existsSync(distPath)) {
-  app.use(express.static(distPath));
+  // HTML — never cache (always get fresh JS bundle references)
+  app.get('/', (req, res) => {
+    res.sendFile(path.join(distPath, 'index.html'), {
+      headers: { 'Cache-Control': 'no-store' },
+    });
+  });
+
+  // Static assets (JS/CSS with hash filenames — cache forever)
+  app.use(express.static(distPath, {
+    maxAge: '1y',
+    immutable: true,
+  }));
+
+  // SPA fallback
+  app.get('*', (req, res) => {
+    if (req.path.startsWith('/api') || req.path.startsWith('/uploads')) return;
+    const indexPath = path.join(distPath, 'index.html');
+    if (fs.existsSync(indexPath)) {
+      res.sendFile(indexPath, {
+        headers: { 'Cache-Control': 'no-store' },
+      });
+    } else {
+      res.status(200).json({ message: 'Host Admin API — frontend not built (run vite build first)' });
+    }
+  });
 }
 
 // Health check

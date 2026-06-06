@@ -616,6 +616,12 @@ For custom analysis (e.g. "성수 플랫을 플랫폼별로"): get_db_schema() t
 
 // ===== Chat Handler =====
 
+// Strip markdown bold from messages
+function cleanMessage(msg) {
+  if (typeof msg !== 'string') return msg;
+  return msg.replace(/\*\*/g, '').replace(/__/g, '');
+}
+
 async function callDeepSeek(messages, toolsEnabled = true) {
   const apiKey = process.env.DEEPSEEK_API_KEY;
   if (!apiKey) {
@@ -849,7 +855,7 @@ router.post('/', async (req, res) => {
       return res.json({ message: msg, ui: null, canvas });
     }
     console.log('⚠️  Direct response not JSON — raw:', content.slice(0, 100).replace(/\n/g, ' '));
-    return res.json({ message: content, ui: null });
+    return res.json({ message: cleanMessage(content), ui: null });
 
   } catch (err) {
     console.error('Chat error:', err);
@@ -913,7 +919,7 @@ router.post('/stream', async (req, res) => {
           if (dataModifyingTools.size > 0) result._refetch = 'properties';
           send('complete', result);
         } else {
-          send('complete', { message: content, ui: null });
+          send('complete', { message: cleanMessage(content), ui: null });
         }
         return res.end();
       }
@@ -973,7 +979,7 @@ function parseAIResponse(content) {
   try {
     const parsed = JSON.parse(content);
     if (parsed.message) {
-      return { message: parsed.message, ui: parsed.ui || null, canvas: parsed.canvas || null, navigate: parsed.navigate || null };
+      return { message: cleanMessage(parsed.message), ui: parsed.ui || null, canvas: parsed.canvas || null, navigate: parsed.navigate || null };
     }
   } catch {}
 
@@ -992,7 +998,7 @@ function parseAIResponse(content) {
       const parsed = JSON.parse(jsonStr);
       if (parsed.message || parsed.canvas) {
         return {
-          message: parsed.message || '완료했습니다.',
+          message: cleanMessage(parsed.message || '완료했습니다.'),
           ui: parsed.ui || null,
           canvas: parsed.canvas || null,
           navigate: parsed.navigate || null,
@@ -1019,7 +1025,7 @@ function parseAIResponse(content) {
           const parsed = JSON.parse(jsonStr);
           if (parsed.canvas || (parsed.message && (parsed.ui || parsed.navigate || parsed.canvas))) {
             return {
-              message: parsed.message || '완료했습니다.',
+              message: cleanMessage(parsed.message || '완료했습니다.'),
               ui: parsed.ui || null,
               canvas: parsed.canvas || null,
               navigate: parsed.navigate || null,
