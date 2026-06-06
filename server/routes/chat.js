@@ -814,6 +814,7 @@ router.post('/', async (req, res) => {
     let pendingUI = null;
     let lastDataTool = null; // Track last data query tool for auto-fallback
     let aiPlan = null; // Track AI's plan if provided
+    const executedCalls = []; // Track all tool calls for auto-plan
 
     // Extract plan from first response content if present
     if (firstChoice.content) {
@@ -838,6 +839,7 @@ router.post('/', async (req, res) => {
           try { args = JSON.parse(argsStr); } catch {}
           
           console.log(`🔧 Tool call: ${name}(${JSON.stringify(args)})`);
+          executedCalls.push(name);
           if (['add_property_tag', 'remove_property_tag', 'update_booking_status'].includes(name)) {
             dataModifyingTools.add(name);
           }
@@ -893,6 +895,7 @@ router.post('/', async (req, res) => {
               let args = {};
               try { args = JSON.parse(argsStr); } catch {}
               console.log(`🔧 Tool call (round ${toolRound + 2}): ${name}(${JSON.stringify(args)})`);
+              executedCalls.push(name);
               if (['add_property_tag', 'remove_property_tag', 'update_booking_status'].includes(name)) {
                 dataModifyingTools.add(name);
               }
@@ -971,6 +974,11 @@ router.post('/', async (req, res) => {
         }
         if (aiPlan) {
           result.plan = aiPlan;
+        } else if (executedCalls.length > 0) {
+          // Auto-generate plan from actual tool call sequence
+          const stepLabels = { get_db_schema: 'get_db_schema()', execute_sql: 'execute_sql()', render_ui: 'render_ui()' };
+          result.plan = executedCalls.filter(n => n !== 'render_ui' || true).map(name => stepLabels[name] || name);
+          console.log(`📋 Auto-plan from ${executedCalls.length} tool calls`);
         }
         return res.json(result);
       }
@@ -1024,6 +1032,10 @@ router.post('/', async (req, res) => {
         if (!directResult.ui && lastDataTool) {
           const autoUI = autoGenerateUI(lastDataTool);
           if (autoUI) directResult.ui = autoUI;
+        }
+        if (!directResult.plan && executedCalls.length > 0) {
+          const stepLabels = { get_db_schema: 'get_db_schema()', execute_sql: 'execute_sql()', render_ui: 'render_ui()' };
+          directResult.plan = executedCalls.map(name => stepLabels[name] || name);
         }
         return res.json(directResult);
       }

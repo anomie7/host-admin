@@ -1,21 +1,33 @@
 ◇ injected env (1) from ../.env // tip: ◈ encrypted .env [www.dotenvx.com]
-node:events:485
-      throw er; // Unhandled 'error' event
-      ^
-
-Error: listen EADDRINUSE: address already in use 0.0.0.0:4001
-    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
-    at listenInCluster (node:net:1997:12)
-    at node:net:2206:7
-    at process.processTicksAndRejections (node:internal/process/task_queues:90:21)
-Emitted 'error' event on Server instance at:
-    at emitErrorNT (node:net:1976:8)
-    at process.processTicksAndRejections (node:internal/process/task_queues:90:21) {
-  code: 'EADDRINUSE',
-  errno: -48,
-  syscall: 'listen',
-  address: '0.0.0.0',
-  port: 4001
-}
-
-Node.js v24.2.0
+🏨 Host Admin server running on port 4001
+🔧 Tool call: get_db_schema({})
+🔧 Tool call (round 2): execute_sql({"sql":"SELECT b.id, p.name AS property_name, b.guest_name, b.check_in, b.check_out, b.status, b.platform, b.amount\nFROM bookings b\nJOIN properties p ON b.property_id = p.id\nWHERE b.check_in >= '2026-07-01' AND b.check_in < '2026-08-01'\nORDER BY b.check_in ASC"})
+🔧 Tool call (round 3): render_ui({"type":"booking-list","props":"{\"title\": \"📅 7월 예약 목록\", \"bookings\": [{\"id\": 7, \"property_name\": \"코지 강남 스튜디오\", \"guest_name\": \"윤도현\", \"check_in\": \"2026-07-01\", \"check_out\": \"2026-07-04\", \"status\": \"checked_out\", \"platform\": \"booking\", \"amount\": 133851}, {\"id\": 19, \"property_name\": \"홍대 아티스트 로프트\", \"guest_name\": \"하지원\", \"check_in\": \"2026-07-04\", \"check_out\": \"2026-07-06\", \"status\": \"cancelled\", \"platform\": \"airbnb\", \"amount\": 171787}, {\"id\": 43, \"property_name\": \"이태원 힐탑 스위트\", \"guest_name\": \"Carlos Ruiz\", \"check_in\": \"2026-07-04\", \"check_out\": \"2026-07-07\", \"status\": \"checked_out\", \"platform\": \"liveanywhere\", \"amount\": 681525}, {\"id\": 79, \"property_name\": \"제주 애월 바다집\", \"guest_name\": \"Tomás Rivera\", \"check_in\": \"2026-07-12\", \"check_out\": \"2026-07-16\", \"status\": \"upcoming\", \"platform\": \"liveanywhere\", \"amount\": 293072}, {\"id\": 103, \"property_name\": \"여수 밤바다 펜션\", \"guest_name\": \"전지현\", \"check_in\": \"2026-07-15\", \"check_out\": \"2026-07-17\", \"status\": \"checked_in\", \"platform\": \"booking\", \"amount\": 309506}, {\"id\": 115, \"property_name\": \"속초 바다뷰 스테이\", \"guest_name\": \"Sarah Johnson\", \"check_in\": \"2026-07-26\", \"check_out\": \"2026-07-29\", \"status\": \"cancelled\", \"platform\": \"booking\", \"amount\": 306722}, {\"id\": 31, \"property_name\": \"성수 미니멀 플랫\", \"guest_name\": \"Anna Müller\", \"check_in\": \"2026-07-27\", \"check_out\": \"2026-07-28\", \"status\": \"checked_in\", \"platform\": \"booking\", \"amount\": 224476}, {\"id\": 55, \"property_name\": \"종로 한옥 게스트하우스\", \"guest_name\": \"김태리\", \"check_in\": \"2026-07-27\", \"check_out\": \"2026-07-28\", \"status\": \"checked_in\", \"platform\": \"airbnb\", \"amount\": 160146}, {\"id\": 67, \"property_name\": \"서촌 감성 주택\", \"guest_name\": \"신세경\", \"check_in\": \"2026-07-27\", \"check_out\": \"2026-07-29\", \"status\": \"cancelled\", \"platform\": \"booking\", \"amount\": 109943}, {\"id\": 91, \"property_name\": \"제주 성산의 뜨락\", \"guest_name\": \"이수영\", \"check_in\": \"2026-07-30\", \"check_out\": \"2026-08-02\", \"status\": \"checked_out\", \"platform\": \"airbnb\", \"amount\": 326252}]}"})
+🎨 render_ui (round 3): booking-list
+🎨 Merged render_ui: booking-list
+📦 AI response: no canvas
+🔧 Tool call: get_db_schema({})
+🔧 Tool call (round 2): execute_sql({"sql":"SELECT b.id, b.guest_name, b.check_in, b.check_out, b.status, b.platform, b.amount, p.name AS property_name\nFROM bookings b\nJOIN properties p ON b.property_id = p.id\nWHERE b.check_in >= '2026-06-07' AND b.check_in <= '2026-06-13'\n  AND b.status != 'cancelled'\nORDER BY b.check_in ASC"})
+🔧 Tool call (round 3): render_ui({"type":"booking-list","props":"{\"title\":\"📅 다음주 체크인 예약 (6/7~6/13)\", \"bookings\":[{\"id\":54,\"guest_name\":\"이정재\",\"property_name\":\"종로 한옥 게스트하우스\",\"check_in\":\"2026-06-11\",\"check_out\":\"2026-06-13\",\"status\":\"upcoming\",\"platform\":\"airbnb\",\"amount\":164484}]}"})
+🎨 render_ui (round 3): booking-list
+🎨 Merged render_ui: booking-list
+📦 AI response: no canvas
+🔧 Tool call: get_db_schema({})
+🔧 Tool call (round 2): execute_sql({"sql":"SELECT p.id, p.name, b.platform, SUM(b.amount) as total_revenue\nFROM bookings b\nJOIN properties p ON b.property_id = p.id\nWHERE b.status IN ('checked_out', 'checked_in')\nGROUP BY p.id, b.platform\nORDER BY total_revenue DESC"})
+🔧 Tool call (round 3): execute_sql({"sql":"SELECT p.id, p.name, SUM(b.amount) as total_revenue\nFROM bookings b\nJOIN properties p ON b.property_id = p.id\nWHERE b.status IN ('checked_out', 'checked_in')\nGROUP BY p.id\nORDER BY total_revenue DESC\nLIMIT 1"})
+🔧 Tool call (round 4): render_ui({"type":"chart","props":"{\"chartType\": \"platform\", \"title\": \"🏆 수익 1위 숙소: 홍대 아티스트 로프트 — 플랫폼별 실적\", \"data\": [{\"platform\": \"에어비앤비\", \"revenue\": 1651192}, {\"platform\": \"Live Anywhere\", \"revenue\": 345534}]}"})
+🎨 render_ui (round 4): chart
+🔧 Tool call (round 5): render_ui({"type":"table","props":"{\"title\": \"📊 전체 숙소 플랫폼별 수익 순위\", \"headers\": [\"순위\", \"숙소명\", \"플랫폼\", \"수익\"], \"rows\": [[\"1\", \"해운대 오션뷰 레지던스\", \"에어비앤비\", \"1,657,302원\"], [\"2\", \"홍대 아티스트 로프트\", \"에어비앤비\", \"1,651,192원\"], [\"3\", \"속초 바다뷰 스테이\", \"에어비앤비\", \"1,032,638원\"], [\"4\", \"코지 강남 스튜디오\", \"부킹닷컴\", \"780,101원\"], [\"5\", \"용산 리버뷰 하우스\", \"부킹닷컴\", \"750,702원\"], [\"6\", \"성수 미니멀 플랫\", \"에어비앤비\", \"748,791원\"], [\"7\", \"이태원 힐탑 스위트\", \"에어비앤비\", \"714,296원\"], [\"8\", \"용산 리버뷰 하우스\", \"에어비앤비\", \"696,132원\"], [\"9\", \"코지 강남 스튜디오\", \"에어비앤비\", \"689,012원\"], [\"10\", \"이태원 힐탑 스위트\", \"Live Anywhere\", \"681,525원\"]], \"subtext\": \"전체 수익 1위: 홍대 아티스트 로프트 (총 1,996,726원)\"}"})
+🎨 render_ui (round 5): table
+🔧 Tool call (round 6): add_property_tag({"property_id":2,"tag":"🏆 수익률 1위"})
+🔧 Tool call (round 7): render_ui({"type":"html","props":"{\"content\": \"<div style='background:linear-gradient(135deg,#667eea,#764ba2);color:white;padding:20px;border-radius:16px;margin-top:16px'><h3 style='margin:0 0 8px 0'>🏆 수익 1위 숙소: 홍대 아티스트 로프트</h3><p style='margin:0;opacity:0.9'>총 수익: 1,996,726원</p><hr style='border-color:rgba(255,255,255,0.2);margin:12px 0'><div style='display:flex;justify-content:space-between'><div><strong>에어비앤비</strong><br>1,651,192원 (82.7%)</div><div><strong>Live Anywhere</strong><br>345,534원 (17.3%)</div></div></div>\"}"})
+🎨 render_ui (round 7): html
+🎨 Merged render_ui: html
+📦 AI response: no canvas
+🏷️  Data modified — injected _refetch flag
+🔧 Tool call: get_db_schema({})
+🔧 Tool call (round 2): execute_sql({"sql":"SELECT b.id, b.guest_name, p.name AS property_name, b.check_in, b.check_out, b.status, b.platform, b.amount\nFROM bookings b\nJOIN properties p ON b.property_id = p.id\nWHERE b.check_in >= '2026-07-01' AND b.check_in < '2026-08-01'\nORDER BY b.check_in ASC"})
+🔧 Tool call (round 3): render_ui({"type":"booking-list","props":"{\"title\": \"📅 7월 예약 리스트\", \"bookings\": [{\"id\": 7, \"guest_name\": \"윤도현\", \"property_name\": \"코지 강남 스튜디오\", \"check_in\": \"2026-07-01\", \"check_out\": \"2026-07-04\", \"status\": \"checked_out\", \"platform\": \"booking\", \"amount\": 133851}, {\"id\": 19, \"guest_name\": \"하지원\", \"property_name\": \"홍대 아티스트 로프트\", \"check_in\": \"2026-07-04\", \"check_out\": \"2026-07-06\", \"status\": \"cancelled\", \"platform\": \"airbnb\", \"amount\": 171787}, {\"id\": 43, \"guest_name\": \"Carlos Ruiz\", \"property_name\": \"이태원 힐탑 스위트\", \"check_in\": \"2026-07-04\", \"check_out\": \"2026-07-07\", \"status\": \"checked_out\", \"platform\": \"liveanywhere\", \"amount\": 681525}, {\"id\": 79, \"guest_name\": \"Tomás Rivera\", \"property_name\": \"제주 애월 바다집\", \"check_in\": \"2026-07-12\", \"check_out\": \"2026-07-16\", \"status\": \"upcoming\", \"platform\": \"liveanywhere\", \"amount\": 293072}, {\"id\": 103, \"guest_name\": \"전지현\", \"property_name\": \"여수 밤바다 펜션\", \"check_in\": \"2026-07-15\", \"check_out\": \"2026-07-17\", \"status\": \"checked_in\", \"platform\": \"booking\", \"amount\": 309506}, {\"id\": 115, \"guest_name\": \"Sarah Johnson\", \"property_name\": \"속초 바다뷰 스테이\", \"check_in\": \"2026-07-26\", \"check_out\": \"2026-07-29\", \"status\": \"cancelled\", \"platform\": \"booking\", \"amount\": 306722}, {\"id\": 31, \"guest_name\": \"Anna Müller\", \"property_name\": \"성수 미니멀 플랫\", \"check_in\": \"2026-07-27\", \"check_out\": \"2026-07-28\", \"status\": \"checked_in\", \"platform\": \"booking\", \"amount\": 224476}, {\"id\": 55, \"guest_name\": \"김태리\", \"property_name\": \"종로 한옥 게스트하우스\", \"check_in\": \"2026-07-27\", \"check_out\": \"2026-07-28\", \"status\": \"checked_in\", \"platform\": \"airbnb\", \"amount\": 160146}, {\"id\": 67, \"guest_name\": \"신세경\", \"property_name\": \"서촌 감성 주택\", \"check_in\": \"2026-07-27\", \"check_out\": \"2026-07-29\", \"status\": \"cancelled\", \"platform\": \"booking\", \"amount\": 109943}, {\"id\": 91, \"guest_name\": \"이수영\", \"property_name\": \"제주 성산의 뜨락\", \"check_in\": \"2026-07-30\", \"check_out\": \"2026-08-02\", \"status\": \"checked_out\", \"platform\": \"airbnb\", \"amount\": 326252}]}"})
+🎨 render_ui (round 3): booking-list
+🎨 Merged render_ui: booking-list
+📦 AI response: no canvas
