@@ -342,8 +342,17 @@ export default function ChartWidget({ chartType, title, data, sortBy }) {
   };
 
   return (
-    <div className="mini-card" style={{ padding: 16, width: '100%', minWidth: 0 }}>
-      {title && <div className="mini-card-title">{title || chartLabels[chartType] || '차트'}</div>}
+    <div style={{
+      background: 'var(--bg-elevated)',
+      border: '1px solid var(--border-light)',
+      borderRadius: 'var(--radius-sm)',
+      padding: 8,
+      marginTop: 4,
+      width: '100%',
+      minWidth: 0,
+      boxSizing: 'border-box',
+    }}>
+      {title && <div className="mini-card-title" style={{ margin: 0, marginBottom: 4, padding: '0 4px', fontSize: 12 }}>{title || chartLabels[chartType] || '차트'}</div>}
       {renderChart()}
     </div>
   );
