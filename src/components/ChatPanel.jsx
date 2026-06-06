@@ -121,7 +121,13 @@ export default function ChatPanel() {
   };
 
   const handleAddToCanvas = (item) => {
-    canvas.addItem(item);
+    // Create a new canvas session for this item
+    const title = item.type === 'chart'
+      ? `${item.props?.chartType || '차트'}`
+      : item.type === 'booking-list' ? '예약 목록'
+      : item.type === 'stats-card' ? `${item.props?.label || '통계'}`
+      : '위젯';
+    canvas.createSession(title, [item]);
     navigate('/canvas');
   };
 

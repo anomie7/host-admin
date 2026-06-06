@@ -5,7 +5,7 @@ const router = Router();
 const DEEPSEEK_API_URL = 'https://api.deepseek.com/v1/chat/completions';
 
 // Dashboard keywords to detect canvas requests
-const DASHBOARD_KEYWORDS = ['대시보드', '대쉬보드', '캔버스', 'canvas', '만들어줘', '만들어 봐', '만들어달라', '보기 좋게', '한눈에', '시각화', '이 대화를 토대로', '지금까지 얘기'];
+const DASHBOARD_KEYWORDS = ['대시보드', '대쉬보드', '캔버스', 'canvas', '만들어줘', '만들어 봐', '만들어달라', '보기 좋게', '한눈에', '시각화', '이 대화를 토대로', '지금까지 얘기', '추가해줘', '담아줘', '넣어줘', '올려줘', '보여줘 캔버스'];
 
 function isDashboardRequest(messages) {
   if (!messages || messages.length === 0) return false;
@@ -20,31 +20,49 @@ function buildAutoCanvas(messages) {
   const yearRow = db.prepare("SELECT strftime('%Y', MAX(check_in)) as year FROM bookings").get();
   const thisYear = (yearRow && yearRow.year) || new Date().getFullYear().toString();
 
-  // Detect if the conversation mentions a specific month
+  // Detect if the conversation mentions a specific month or property
   let focusMonth = null;
+  let focusProperty = null;
   if (messages) {
     const allText = messages.map(m => m.content || '').join(' ');
-    const monthNames = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
-    const monthNamesFull = ['일월','이월','삼월','사월','오월','유월','칠월','팔월','구월','시월','십일월','십이월'];
+    
     // Check for "N월" patterns (e.g., "6월 수익", "7월 예약")
     const monthMatch = allText.match(/(\d{1,2})월/);
     if (monthMatch) {
       focusMonth = parseInt(monthMatch[1]);
+    }
+
+    // Check for specific property mentions (look for 숙소명 patterns in quotes or common names)
+    const propertyNames = ['성수 미니멀 플랫','코지 강남 스튜디오','홍대 아티스트 로프트','용산 리버뷰','이태원 힐탑','종로 한옥','서촌 감성','해운대 오션뷰','제주 애월','제주 성산','여수 밤바다','속초 바다뷰'];
+    for (const name of propertyNames) {
+      if (allText.includes(name)) {
+        focusProperty = name;
+        break;
+      }
     }
   }
 
   // If a specific month is mentioned, get data for that month + annual
   const targetYear = thisYear;
 
-  // For aggregate data: use the specific month if detected, else full year
-  const timeFilter = focusMonth
-    ? `strftime('%m', check_in) = '${String(focusMonth).padStart(2, '0')}' AND strftime('%Y', check_in) = '${targetYear}'`
-    : `strftime('%Y', check_in) = '${targetYear}'`;
+  // Build time+property filter
+  let timeFilter;
+  if (focusMonth) {
+    timeFilter = `strftime('%m', check_in) = '${String(focusMonth).padStart(2, '0')}' AND strftime('%Y', check_in) = '${targetYear}'`;
+  } else {
+    timeFilter = `strftime('%Y', check_in) = '${targetYear}'`;
+  }
+  const propFilter = focusProperty
+    ? ` AND b.property_id = (SELECT id FROM properties WHERE name LIKE '%${focusProperty.replace(/'/g, "''")}%' LIMIT 1)`
+    : '';
+  const propFilterWhere = focusProperty
+    ? ` AND property_id = (SELECT id FROM properties WHERE name LIKE '%${focusProperty.replace(/'/g, "''")}%' LIMIT 1)`
+    : '';
 
   // Summary data
   const totalStats = db.prepare(`
     SELECT COUNT(*) as totalBookings, SUM(amount) as totalRevenue, AVG(amount) as avgRate
-    FROM bookings WHERE ${timeFilter} AND status != 'cancelled'
+    FROM bookings WHERE ${timeFilter} AND status != 'cancelled'${propFilterWhere}
   `).get();
 
   let occupancyRate;
@@ -52,13 +70,13 @@ function buildAutoCanvas(messages) {
     const daysInMonth = new Date(parseInt(targetYear), focusMonth, 0).getDate();
     const occ = db.prepare(`
       SELECT COUNT(DISTINCT check_in) as days FROM bookings
-      WHERE ${timeFilter} AND status != 'cancelled'
+      WHERE ${timeFilter} AND status != 'cancelled'${propFilterWhere}
     `).get();
     occupancyRate = Math.round((occ.days / daysInMonth) * 100);
   } else {
     const totalDays = db.prepare(`
       SELECT COUNT(DISTINCT check_in) as days FROM bookings
-      WHERE ${timeFilter} AND status != 'cancelled'
+      WHERE ${timeFilter} AND status != 'cancelled'${propFilterWhere}
     `).get();
     occupancyRate = Math.round((totalDays.days / 365) * 100);
   }
@@ -73,7 +91,7 @@ function buildAutoCanvas(messages) {
   // Platform revenue
   const platformRevenue = db.prepare(`
     SELECT platform, SUM(amount) as revenue, COUNT(*) as bookings
-    FROM bookings WHERE ${timeFilter} AND status != 'cancelled'
+    FROM bookings WHERE ${timeFilter} AND status != 'cancelled'${propFilterWhere}
     GROUP BY platform
   `).all();
 
@@ -83,15 +101,22 @@ function buildAutoCanvas(messages) {
     WHERE strftime('%Y', check_in) = ? GROUP BY status
   `).all(targetYear);
 
-  // Property ranking
-  const propertyRanking = db.prepare(`
-    SELECT p.name as property_name, COUNT(*) as booking_count, SUM(b.amount) as total_revenue, AVG(b.amount) as avg_rate
-    FROM bookings b JOIN properties p ON b.property_id = p.id
-    WHERE ${timeFilter} AND b.status != 'cancelled'
-    GROUP BY b.property_id ORDER BY total_revenue DESC LIMIT 5
-  `).all();
+  // Property ranking (skip if focusing on one property)
+  let propertyRanking;
+  if (focusProperty) {
+    propertyRanking = [];
+  } else {
+    propertyRanking = db.prepare(`
+      SELECT p.name as property_name, COUNT(*) as booking_count, SUM(b.amount) as total_revenue, AVG(b.amount) as avg_rate
+      FROM bookings b JOIN properties p ON b.property_id = p.id
+      WHERE ${timeFilter} AND b.status != 'cancelled'
+      GROUP BY b.property_id ORDER BY total_revenue DESC LIMIT 5
+    `).all();
+  }
 
-  const title = focusMonth ? `${focusMonth}월 대시보드` : '전체 대시보드';
+  let title = '전체 대시보드';
+  if (focusProperty) title = `${focusProperty} 대시보드`;
+  else if (focusMonth) title = `${focusMonth}월 대시보드`;
 
   const items = [
     {
@@ -629,6 +654,18 @@ When the user asks "예약 5번 상세로 가줘", "5번 예약 보여줘":
 **잘못된 예:** 사용자가 "이번달 수익"을 물어봤는데 AI가 엉뚱한 월 데이터로 canvas를 만듦
 **올바른 예:** 사용자가 물어본 "이번달(6월) 수익 ₩3,337,172"과 "7월 예약" 데이터를 canvas에 반영
 
+## "캔버스에 추가해줘" / "담아줘" — 방금 보여준 데이터를 캔버스에
+
+사용자가 "캔버스에 추가해줘", "담아줘", "넣어줘", "올려줘" 라고 하면:
+1. **방금 전에 보여준 데이터를 기반**으로 canvas를 구성하세요
+2. 방금 stats-card를 보여줬다면 → summary-stats chart로 canvas에 추가
+3. 방금 booking-list를 보여줬다면 → 해당 예약 목록을 canvas item으로 추가
+4. 방금 chart를 보여줬다면 → 해당 차트 데이터를 canvas에 추가
+5. **반드시 JSON 응답에 "canvas" 필드**를 포함하세요
+
+**예:** 사용자가 "6월 수익 ₩3,337,172"를 보고 "캔버스에 추가해줘" → 
+→ 그 수치를 포함한 summary-stats chart를 canvas에 담아서 응답
+
 ## CANVAS FIELD — 🚨 "대시보드/만들어줘/보기 좋게" 요청 시 반드시 포함
 
 ### 🚨 가장 중요한 규칙 (반드시 지켜주세요)
@@ -815,14 +852,12 @@ router.post('/', async (req, res) => {
       const result = parseAIResponse(finalContent);
       if (result) {
         console.log('📦 AI response:', result.canvas ? `✅ canvas ${result.canvas.items?.length || 0} items` : 'no canvas');
+        // If user asked for dashboard/canvas but AI forgot canvas, auto-inject
+        if (!result.canvas && isDashboardRequest(userMessages)) {
+          result.canvas = buildAutoCanvas(userMessages, result.ui);
+          console.log('🔄 Injected canvas into AI response (AI forgot it)');
+        }
         return res.json(result);
-      }
-      // Fallback: if user asked for dashboard but AI didn't provide canvas, auto-create
-      if (isDashboardRequest(userMessages)) {
-        const canvas = buildAutoCanvas(userMessages);
-        const msg = finalContent.length > 300 ? finalContent.slice(0, 300) + '…' : finalContent;
-        console.log('🔄 Auto-generating canvas (AI failed to include it)');
-        return res.json({ message: msg, ui: null, canvas });
       }
       console.log('⚠️  AI response not JSON — raw:', finalContent.slice(0, 100).replace(/\n/g, ' '));
       return res.json({ message: finalContent, ui: null });
@@ -833,16 +868,12 @@ router.post('/', async (req, res) => {
     const result = parseAIResponse(content);
     if (result) {
       console.log('📦 Direct canvas:', result.canvas ? `✅ ${result.canvas.items?.length || 0} items` : 'no canvas');
+      if (!result.canvas && isDashboardRequest(userMessages)) {
+        result.canvas = buildAutoCanvas(userMessages, result.ui);
+        console.log('🔄 Injected canvas into direct response (AI forgot it)');
+      }
       return res.json(result);
     }
-    // Fallback: if user asked for dashboard but AI didn't provide canvas, auto-create
-    if (isDashboardRequest(userMessages)) {
-      const canvas = buildAutoCanvas(userMessages);
-      const msg = content.length > 300 ? content.slice(0, 300) + '…' : content;
-      console.log('🔄 Auto-generating canvas (AI failed to include it)');
-      return res.json({ message: msg, ui: null, canvas });
-    }
-    console.log('⚠️  Direct response not JSON — raw:', content.slice(0, 100).replace(/\n/g, ' '));
     return res.json({ message: content, ui: null });
 
   } catch (err) {
