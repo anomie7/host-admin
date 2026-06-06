@@ -12,6 +12,9 @@
     "eval": "node test/eval.js",
     "eval:quick": "node test/eval.js --quick",
     "eval:verbose": "node test/eval.js --verbose",
+    "eval:ui": "node test/eval-ui.js",
+    "eval:ui:quick": "node test/eval-ui.js --quick",
+    "eval:ui:verbose": "node test/eval-ui.js --verbose",
     "test": "npx playwright test test/playwright.spec.mjs --reporter=list",
     "test:headed": "npx playwright test test/playwright.spec.mjs --reporter=list --headed",
     "start": "node server/index.js"

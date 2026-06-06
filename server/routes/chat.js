@@ -796,6 +796,10 @@ router.post('/', async (req, res) => {
       const result = parseAIResponse(finalContent);
       if (result) {
         console.log('📦 AI response:', result.canvas ? `✅ canvas ${result.canvas.items?.length || 0} items` : 'no canvas');
+        if (!result.canvas && isDashboardRequest(userMessages)) {
+          result.canvas = buildAutoCanvas(userMessages, result.ui);
+          console.log('🔄 Injected canvas into response');
+        }
         if (dataModifyingTools.size > 0) {
           result._refetch = 'properties';
           console.log('🏷️  Data modified — injected _refetch flag');
@@ -826,6 +830,10 @@ router.post('/', async (req, res) => {
     const result = parseAIResponse(content);
     if (result) {
       console.log('📦 Direct canvas:', result.canvas ? `✅ ${result.canvas.items?.length || 0} items` : 'no canvas');
+      if (!result.canvas && isDashboardRequest(userMessages)) {
+        result.canvas = buildAutoCanvas(userMessages, result.ui);
+        console.log('🔄 Injected canvas into direct response');
+      }
       return res.json(result);
     }
     // Fallback: if user asked for dashboard but AI didn't provide canvas, auto-create
