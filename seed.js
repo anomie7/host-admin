@@ -120,8 +120,8 @@ console.log(`✅ ${properties.length}개 숙소 데이터 생성 완료`);
 
 const guestNames = [
   '김민지', '박재현', '이수영', '최유나', '정태우', '강서연', '윤도현', '한지민',
-  '송미경', '이상호', '김태희', '박준호', '배수진', '유재민', '전혜진', '현승우',
-  '김은정', '이종민', '하지영', '강민수', '서현주', '임성민', '신세영', '차승민',
+  '송미숙', '이상호', '김태호', '박준수', '배수진', '유재민', '전혜선', '현승일',
+  '김은정', '이종민', '하지연', '강민수', '서현주', '임성민', '신세영', '차승민',
   'Emma Wilson', 'John Smith', 'Sarah Johnson', 'Michael Chen', 'Lisa Park',
   'David Kim', 'Anna Müller', 'James Brown', 'Yuki Tanaka', 'Maria Garcia',
   'Tomás Rivera', 'Natalie Wong', 'Pierre Dubois', 'Aiko Sato', 'Oliver Lee',
