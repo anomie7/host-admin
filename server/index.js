@@ -2,13 +2,16 @@ import express from 'express';
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import dotenv from 'dotenv';
 import { getDb } from './db.js';
 import propertiesRouter from './routes/properties.js';
 import bookingsRouter from './routes/bookings.js';
+import chatRouter from './routes/chat.js';
 import fs from 'fs';
 import { spawnSync } from 'child_process';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.join(__dirname, '..', '..', '.env') });
 const app = express();
 
 app.use(cors());
@@ -20,6 +23,7 @@ app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
 // API routes
 app.use('/api/properties', propertiesRouter);
 app.use('/api/bookings', bookingsRouter);
+app.use('/api/chat', chatRouter);
 
 // Calendar endpoint — bookings grouped by date for a given month
 app.get('/api/calendar', (req, res) => {
@@ -129,6 +133,68 @@ app.get('/api/dashboard/summary', (req, res) => {
         : r.status === 'upcoming' ? '입실 예정'
         : r.status === 'checked_out' ? '퇴실 완료' : '취소됨',
     })),
+  });
+});
+
+// Dashboard charts endpoint — for Recharts
+app.get('/api/dashboard/charts', (req, res) => {
+  const db = getDb();
+  const yearRow = db.prepare("SELECT strftime('%Y', MAX(check_in)) as year FROM bookings").get();
+  const thisYear = (yearRow && yearRow.year) || new Date().getFullYear().toString();
+
+  // Monthly revenue (non-cancelled)
+  const monthlyRevenue = db.prepare(`
+    SELECT strftime('%m', check_in) as month,
+           SUM(amount) as revenue,
+           COUNT(*) as bookings
+    FROM bookings
+    WHERE strftime('%Y', check_in) = ? AND status != 'cancelled'
+    GROUP BY strftime('%m', check_in)
+    ORDER BY month
+  `).all(thisYear);
+
+  // Platform revenue
+  const platformRevenue = db.prepare(`
+    SELECT platform, SUM(amount) as revenue, COUNT(*) as bookings
+    FROM bookings
+    WHERE strftime('%Y', check_in) = ? AND status != 'cancelled'
+    GROUP BY platform
+  `).all(thisYear);
+
+  // Monthly occupancy (distinct check-in days / 30)
+  const monthlyOccupancy = db.prepare(`
+    SELECT strftime('%m', check_in) as month,
+           COUNT(DISTINCT check_in) as occupied_days,
+           COUNT(*) as bookings
+    FROM bookings
+    WHERE strftime('%Y', check_in) = ? AND status != 'cancelled'
+    GROUP BY strftime('%m', check_in)
+    ORDER BY month
+  `).all(thisYear);
+
+  // Status distribution
+  const statusDistribution = db.prepare(`
+    SELECT status, COUNT(*) as count
+    FROM bookings
+    WHERE strftime('%Y', check_in) = ?
+    GROUP BY status
+  `).all(thisYear);
+
+  // Monthly platform breakdown
+  const monthlyPlatform = db.prepare(`
+    SELECT strftime('%m', check_in) as month, platform, SUM(amount) as revenue
+    FROM bookings
+    WHERE strftime('%Y', check_in) = ? AND status != 'cancelled'
+    GROUP BY strftime('%m', check_in), platform
+    ORDER BY month, platform
+  `).all(thisYear);
+
+  res.json({
+    monthlyRevenue,
+    platformRevenue,
+    monthlyOccupancy,
+    statusDistribution,
+    monthlyPlatform,
   });
 });
 

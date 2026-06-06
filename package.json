@@ -9,16 +9,24 @@
     "dev": "concurrently -k -n srv,cli -c yellow,cyan \"npm run dev:server\" \"npm run dev:client\"",
     "build": "vite build",
     "seed": "node seed.js",
+    "eval": "node test/eval.js",
+    "eval:quick": "node test/eval.js --quick",
+    "eval:verbose": "node test/eval.js --verbose",
+    "test": "npx playwright test test/playwright.spec.mjs --reporter=list",
+    "test:headed": "npx playwright test test/playwright.spec.mjs --reporter=list --headed",
     "start": "node server/index.js"
   },
   "dependencies": {
+    "@playwright/test": "^1.60.0",
     "better-sqlite3": "^11.7.0",
     "cors": "^2.8.5",
+    "dotenv": "^17.4.2",
     "express": "^4.21.2",
     "multer": "^1.4.5-lts.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-router-dom": "^6.28.0"
+    "react-router-dom": "^6.28.0",
+    "recharts": "^3.8.1"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.4",
