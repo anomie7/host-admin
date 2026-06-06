@@ -8,7 +8,7 @@ export default function SidePanel({ open, onClose, onToggle, isMobile }) {
     <>
       {!isMobile && (
         <div className="side-panel-collapse" onClick={onToggle} title={open ? '접기' : '펼치기'}>
-          <span style={{ transform: open ? 'rotate(0deg)' : 'rotate(180deg)', display: 'inline-block' }}>◀</span>
+          <span style={{ transform: open ? 'rotate(0deg)' : 'rotate(180deg)', display: 'inline-block', transition: 'transform 200ms ease' }}>▶</span>
         </div>
       )}
       <aside className={panelClass} aria-label="AI 어시스턴트">

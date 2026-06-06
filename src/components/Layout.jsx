@@ -80,25 +80,35 @@ export default function Layout({ children, title }) {
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             {isMobile ? (
               <button onClick={togglePanel} aria-label="AI 어시스턴트" style={{
-                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                width: 34, height: 34, borderRadius: '50%',
-                border: '1px solid var(--border-light)', background: panelOpen ? 'var(--accent-glow)' : 'var(--bg-elevated)',
-                color: panelOpen ? 'var(--accent)' : 'var(--text-dim)', cursor: 'pointer', fontSize: 16,
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+                padding: '8px 16px', borderRadius: 20,
+                border: '1px solid', borderColor: panelOpen ? 'var(--accent-dim)' : 'var(--border)',
+                background: panelOpen ? 'var(--accent-glow)' : 'var(--bg-elevated)',
+                color: panelOpen ? 'var(--accent)' : 'var(--text-dim)',
+                cursor: 'pointer', fontSize: 13, fontWeight: 600,
+                fontFamily: 'var(--font-ui)', boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
               }}>
-                🤖
+                <span style={{ fontSize: 15 }}>💬</span>
+                <span>{panelOpen ? '접기' : 'AI 채팅'}</span>
               </button>
             ) : (
               <button onClick={togglePanel} style={{
-                display: 'inline-flex', alignItems: 'center', gap: 6,
-                padding: '6px 14px', borderRadius: 20,
-                border: '1px solid var(--border-light)', background: panelOpen ? 'var(--accent-glow)' : 'var(--bg-elevated)',
+                display: 'inline-flex', alignItems: 'center', gap: 8,
+                padding: '8px 18px', borderRadius: 20,
+                border: '1px solid', borderColor: panelOpen ? 'var(--accent-dim)' : 'var(--border)',
+                background: panelOpen ? 'var(--accent-glow)' : 'var(--bg-elevated)',
                 color: panelOpen ? 'var(--accent)' : 'var(--text-dim)',
-                cursor: 'pointer', fontSize: 13, fontFamily: 'var(--font-ui)',
+                cursor: 'pointer', fontSize: 13, fontWeight: 600,
+                fontFamily: 'var(--font-ui)', boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
                 transition: 'all 150ms ease',
               }}>
-                <span>💬</span>
+                <span style={{ fontSize: 15 }}>💬</span>
                 <span>{panelOpen ? 'AI 채팅 접기' : 'AI 채팅 열기'}</span>
-                <span style={{ fontSize: 10, transform: panelOpen ? 'rotate(180deg)' : 'none', display: 'inline-block' }}>◀</span>
+                <span style={{
+                  fontSize: 11, display: 'inline-block',
+                  transform: panelOpen ? 'rotate(0deg)' : 'rotate(180deg)',
+                  transition: 'transform 200ms ease',
+                }}>▶</span>
               </button>
             )}
             <span style={{ fontSize: '12px', color: 'var(--text-dim)', fontFamily: 'var(--font-display)' }}>Warm Stay</span>
