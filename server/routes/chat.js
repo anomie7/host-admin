@@ -439,167 +439,8 @@ function executeTool(name, args) {
   const today = new Date().toISOString().slice(0, 10);
 
   switch (name) {
-    case 'search_bookings': {
-      const { date_from, date_to, guest_name, property_name, status, platform, limit = 20, id } = args || {};
-      let sql = `SELECT b.*, p.name AS property_name FROM bookings b JOIN properties p ON b.property_id = p.id WHERE 1=1`;
-      const params = [];
-
-      if (id) {
-        sql += ` AND b.id = ?`;
-        params.push(id);
-        const row = db.prepare(sql).get(...params);
-        if (!row) return [];
-        return [{
-          id: row.id,
-          guest_name: row.guest_name,
-          property_name: row.property_name,
-          property_id: row.property_id,
-          check_in: row.check_in,
-          check_out: row.check_out,
-          status: row.status,
-          platform: row.platform,
-          amount: row.amount,
-          settlement_date: row.settlement_date,
-          notes: row.notes,
-        }];
-      }
-
-      if (date_from) { sql += ` AND b.check_in >= ?`; params.push(date_from); }
-      if (date_to) { sql += ` AND b.check_in <= ?`; params.push(date_to); }
-      if (guest_name) { sql += ` AND b.guest_name LIKE ?`; params.push(`%${guest_name}%`); }
-      if (property_name) { sql += ` AND p.name LIKE ?`; params.push(`%${property_name}%`); }
-      if (status) { sql += ` AND b.status = ?`; params.push(status); }
-      if (platform) { sql += ` AND b.platform = ?`; params.push(platform); }
-
-      sql += ` ORDER BY b.check_in ASC LIMIT ?`;
-      params.push(limit);
-
-      const rows = db.prepare(sql).all(...params);
-      return rows.map(r => ({
-        id: r.id,
-        guest_name: r.guest_name,
-        property_name: r.property_name,
-        property_id: r.property_id,
-        check_in: r.check_in,
-        check_out: r.check_out,
-        status: r.status,
-        platform: r.platform,
-        amount: r.amount,
-        settlement_date: r.settlement_date,
-        notes: r.notes,
-      }));
-    }
-
-    case 'get_dashboard_summary': {
-      const thisMonth = today.slice(5, 7);
-      const thisYear = today.slice(0, 4);
-      const daysInMonth = new Date(parseInt(thisYear), parseInt(thisMonth), 0).getDate();
-
-      const todayCheckins = db.prepare(`SELECT COUNT(*) as count, SUM(amount) as revenue FROM bookings WHERE check_in = ? AND status != 'cancelled'`).get(today);
-      const todayCheckouts = db.prepare(`SELECT COUNT(*) as count FROM bookings WHERE check_out = ? AND status != 'cancelled'`).get(today);
-      const monthStats = db.prepare(`SELECT COUNT(*) as total_bookings, SUM(amount) as total_revenue, AVG(amount) as avg_rate FROM bookings WHERE strftime('%m', check_in) = ? AND strftime('%Y', check_in) = ? AND status != 'cancelled'`).get(thisMonth, thisYear);
-      const settlements = db.prepare(`SELECT COUNT(*) as count, SUM(amount) as total FROM bookings WHERE settlement_date IS NOT NULL AND strftime('%m', settlement_date) = ? AND strftime('%Y', settlement_date) = ? AND settlement_date >= ? AND status != 'cancelled'`).get(thisMonth, thisYear, today);
-      const occupiedDays = db.prepare(`SELECT COUNT(DISTINCT check_in) as days FROM bookings WHERE strftime('%m', check_in) = ? AND strftime('%Y', check_in) = ? AND status != 'cancelled'`).get(thisMonth, thisYear);
-      const platformRevenue = db.prepare(`SELECT platform, COUNT(*) as bookings, SUM(amount) as revenue FROM bookings WHERE strftime('%m', check_in) = ? AND strftime('%Y', check_in) = ? AND status != 'cancelled' GROUP BY platform`).all(thisMonth, thisYear);
-      const recentBookings = db.prepare(`SELECT b.*, p.name AS property_name FROM bookings b JOIN properties p ON b.property_id = p.id ORDER BY b.created_at DESC LIMIT 5`).all();
-
-      return {
-        today: { checkIns: todayCheckins.count || 0, checkInRevenue: todayCheckins.revenue || 0, checkOuts: todayCheckouts.count || 0 },
-        month: {
-          totalBookings: monthStats.total_bookings || 0,
-          totalRevenue: monthStats.total_revenue || 0,
-          avgRate: Math.round(monthStats.avg_rate || 0),
-          occupancyRate: Math.round((occupiedDays.days / daysInMonth) * 100),
-        },
-        settlements: { count: settlements.count || 0, total: settlements.total || 0 },
-        platformRevenue: platformRevenue.map(p => ({ platform: p.platform, bookings: p.bookings, revenue: p.revenue })),
-        recentBookings: recentBookings.map(r => ({ ...r, status_label: r.status })),
-      };
-    }
-
-    case 'search_properties': {
-      const { query, id } = args || {};
-      if (id) {
-        const row = db.prepare('SELECT * FROM properties WHERE id = ?').get(id);
-        if (!row) return [];
-        return [{ ...row, photos: JSON.parse(row.photos || '[]'), platforms: JSON.parse(row.platforms || '[]') }];
-      }
-      if (query) {
-        const rows = db.prepare('SELECT * FROM properties WHERE name LIKE ? OR address LIKE ? ORDER BY updated_at DESC').all(`%${query}%`, `%${query}%`);
-        return rows.map(r => ({ ...r, photos: JSON.parse(r.photos || '[]'), platforms: JSON.parse(r.platforms || '[]') }));
-      }
-      const rows = db.prepare('SELECT * FROM properties ORDER BY updated_at DESC').all();
-      return rows.map(r => ({ ...r, photos: JSON.parse(r.photos || '[]'), platforms: JSON.parse(r.platforms || '[]') }));
-    }
-
-    case 'get_calendar': {
-      const { month, year } = args || {};
-      if (!month || !year) return { error: 'month and year required' };
-      const rows = db.prepare(`SELECT b.*, p.name AS property_name FROM bookings b JOIN properties p ON b.property_id = p.id WHERE strftime('%m', b.check_in) = ? AND strftime('%Y', b.check_in) = ? ORDER BY b.check_in ASC`).all(String(month).padStart(2, '0'), String(year));
-      const grouped = {};
-      for (const row of rows) {
-        const date = row.check_in;
-        if (!grouped[date]) grouped[date] = [];
-        grouped[date].push(row);
-      }
-      return grouped;
-    }
-
-    case 'get_chart_data': {
-      const yearRow = db.prepare("SELECT strftime('%Y', MAX(check_in)) as year FROM bookings").get();
-      const thisYear = (yearRow && yearRow.year) || new Date().getFullYear().toString();
-      const monthlyRevenue = db.prepare(`
-        SELECT strftime('%m', check_in) as month, SUM(amount) as revenue, COUNT(*) as bookings
-        FROM bookings WHERE strftime('%Y', check_in) = ? AND status != 'cancelled'
-        GROUP BY strftime('%m', check_in) ORDER BY month
-      `).all(thisYear);
-      const platformRevenue = db.prepare(`
-        SELECT platform, SUM(amount) as revenue, COUNT(*) as bookings
-        FROM bookings WHERE strftime('%Y', check_in) = ? AND status != 'cancelled'
-        GROUP BY platform
-      `).all(thisYear);
-      const monthlyOccupancy = db.prepare(`
-        SELECT strftime('%m', check_in) as month, COUNT(DISTINCT check_in) as occupied_days, COUNT(*) as bookings
-        FROM bookings WHERE strftime('%Y', check_in) = ? AND status != 'cancelled'
-        GROUP BY strftime('%m', check_in) ORDER BY month
-      `).all(thisYear);
-      const statusDistribution = db.prepare(`
-        SELECT status, COUNT(*) as count
-        FROM bookings WHERE strftime('%Y', check_in) = ?
-        GROUP BY status
-      `).all(thisYear);
-      const monthlyPlatform = db.prepare(`
-        SELECT strftime('%m', check_in) as month, platform, SUM(amount) as revenue
-        FROM bookings WHERE strftime('%Y', check_in) = ? AND status != 'cancelled'
-        GROUP BY strftime('%m', check_in), platform ORDER BY month, platform
-      `).all(thisYear);
-      return { monthlyRevenue, platformRevenue, monthlyOccupancy, statusDistribution, monthlyPlatform };
-    }
-
-    case 'get_booking_stats_by_property': {
-      const { sort_by = 'booking_count', year, limit, exclude_cancelled = true, property_id } = args || {};
-      let sql = `SELECT p.id, p.name, COUNT(*) as booking_count, SUM(b.amount) as total_revenue, AVG(b.amount) as avg_rate, p.platforms`;
-      sql += ` FROM bookings b JOIN properties p ON b.property_id = p.id WHERE 1=1`;
-      const params = [];
-      if (exclude_cancelled) { sql += ` AND b.status != 'cancelled'`; }
-      if (year) { sql += ` AND strftime('%Y', b.check_in) = ?`; params.push(String(year)); }
-      if (property_id) { sql += ` AND b.property_id = ?`; params.push(property_id); }
-      sql += ` GROUP BY b.property_id ORDER BY ${sort_by === 'revenue' ? 'total_revenue' : 'booking_count'} DESC`;
-      if (limit) { sql += ` LIMIT ?`; params.push(limit); }
-
-      const rows = db.prepare(sql).all(...params);
-      return rows.map(r => ({
-        property_id: r.id,
-        property_name: r.name,
-        booking_count: r.booking_count,
-        total_revenue: r.total_revenue || 0,
-        avg_rate: Math.round(r.avg_rate || 0),
-        platforms: JSON.parse(r.platforms || '[]'),
-      }));
-    }
 
     case 'get_db_schema': {
-      const db = getDb();
       const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all();
       const schema = tables.map(t => {
         const cols = db.prepare(`PRAGMA table_info(${t.name})`).all();
@@ -632,7 +473,6 @@ function executeTool(name, args) {
       }
 
       try {
-        const db = getDb();
         const params = args.params || [];
         const stmt = db.prepare(trimmed);
         const rows = stmt.all(...params);
@@ -655,7 +495,6 @@ function executeTool(name, args) {
     case 'add_property_tag': {
       const { property_id, tag } = args || {};
       if (!property_id || !tag) return { error: 'property_id and tag are required' };
-      const db = getDb();
       const existing = db.prepare('SELECT tags FROM properties WHERE id = ?').get(property_id);
       if (!existing) return { error: 'Property not found' };
       const currentTags = JSON.parse(existing.tags || '[]');
@@ -668,7 +507,6 @@ function executeTool(name, args) {
     case 'remove_property_tag': {
       const { property_id, tag } = args || {};
       if (!property_id || !tag) return { error: 'property_id and tag are required' };
-      const db = getDb();
       const existing = db.prepare('SELECT tags FROM properties WHERE id = ?').get(property_id);
       if (!existing) return { error: 'Property not found' };
       const currentTags = JSON.parse(existing.tags || '[]');
@@ -683,7 +521,6 @@ function executeTool(name, args) {
       if (!booking_id || !status) return { error: 'booking_id and status are required' };
       const validStatuses = ['upcoming', 'checked_in', 'checked_out', 'cancelled'];
       if (!validStatuses.includes(status)) return { error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` };
-      const db = getDb();
       const existing = db.prepare('SELECT * FROM bookings WHERE id = ?').get(booking_id);
       if (!existing) return { error: 'Booking not found' };
       db.prepare("UPDATE bookings SET status = ?, notes = CASE WHEN notes = '' THEN ? ELSE notes || ' | ' || ? END WHERE id = ?")
@@ -731,6 +568,23 @@ Data modification tools:
 4. For simple questions → execute_sql() directly
 5. Before complex queries → get_db_schema() first
 
+## USING CONVERSATION HISTORY
+The user messages include [CONTEXT:] markers from previous responses.
+These contain structured data like:
+- [CONTEXT: stats-card "예약이 가장 많은 숙소" = 코지 강남 스튜디오 ...]
+- [CONTEXT: booking-list 10건 — #7 윤도현@코지 강남... | 숙소: 코지 강남 스튜디오 (id:1)]
+- [CONTEXT: chart revenue "월별 수익" 12개 (month,revenue,bookings...)]
+
+Use these context markers to understand what was discussed before.
+If the user says "예약 건들 상세하게 보여줘" and context shows they
+were talking about "코지 강남 스튜디오 (id:1)", then your plan should
+query for THAT specific property's bookings.
+
+Examples:
+- User: "예약 제일 많은 숙소는?" → Context gets "코지 강남 스튜디오 (id:1)"
+- User: "예약 건들 상세하게 보여줘" → Plan: execute_sql("SELECT ... WHERE property_id = 1")
+- User: "차트로 보여줘" → Plan: aggregate SQL + render_ui(chart)
+
 ## NEVER ANSWER FROM MEMORY
 You do NOT know the database contents. You MUST look up data using tools.
 
@@ -767,7 +621,13 @@ update_booking_status(), add_property_tag(), remove_property_tag()
 - booking-list: { title, bookings: [...] }
 - chart: { chartType: "revenue"|"platform"|"property-ranking"|"summary"|"status", title, data }
 - table: { title, headers, rows }
-- html: { content: "HTML with inline styles" }`;
+- html: { content: "HTML with inline styles" }
+
+## USING CONTEXT
+The conversation history has [CONTEXT:] markers with structured data.
+Previous [CONTEXT: stats-card "예약이 가장 많은 숙소" = 코지 강남 스튜디오...]
+means the user was looking at "코지 강남 스튜디오" before.
+If the user now says "예약 건들 상세하게 보여줘", filter by that context.`;
 }
 
 function getVerifierPrompt() {

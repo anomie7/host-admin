@@ -39,27 +39,37 @@ export default function ChatPanel() {
         if (m.role === 'assistant' && m.ui) {
           const uiData = m.ui;
           if (uiData.type === 'stats-card') {
-            content += `\n[DATA: ${uiData.props?.label || '통계'} = ${uiData.props?.value || ''}]`;
+            content += `\n[CONTEXT: stats-card "${uiData.props?.label || ''}" = ${uiData.props?.value || ''}${uiData.props?.subtext ? ' (' + uiData.props.subtext + ')' : ''}]`;
           } else if (uiData.type === 'booking-list' && uiData.props?.bookings) {
             const bks = uiData.props.bookings;
-            const summary = bks.slice(0, 2).map(b => `${b.guest_name}(${b.property_name?.slice(0,6)||''})`).join(', ');
-            content += `\n[DATA: 예약 ${bks.length}건 — ${summary}${bks.length > 2 ? ` 외 ${bks.length - 2}건` : ''}]`;
+            const names = [...new Set(bks.map(b => b.property_name).filter(Boolean))];
+            const ids = [...new Set(bks.map(b => b.property_id).filter(Boolean))];
+            const summary = bks.slice(0, 2).map(b => `#${b.id} ${b.guest_name}@${b.property_name?.slice(0,8)||''}`).join(', ');
+            content += `\n[CONTEXT: booking-list ${bks.length}건 — ${summary}${bks.length > 2 ? ` 외 ${bks.length - 2}건` : ''} | 숙소: ${names.join(', ')}${ids.length > 0 ? ' (id:' + ids.join(',') + ')' : ''}]`;
           } else if (uiData.type === 'booking-detail' && uiData.props?.booking) {
             const b = uiData.props.booking;
-            content += `\n[DATA: 예약 #${b.id} — ${b.guest_name} @ ${b.property_name?.slice(0,10)||''} ${b.check_in||''}~${b.check_out||''} ${b.amount ? '₩'+Number(b.amount).toLocaleString() : ''}]`;
+            content += `\n[CONTEXT: booking-detail #${b.id} — ${b.guest_name} at ${b.property_name||''} (property_id:${b.property_id}) ${b.check_in||''}~${b.check_out||''} ${b.amount ? '₩'+Number(b.amount).toLocaleString() : ''} status:${b.status}]`;
           } else if (uiData.type === 'chart') {
-            content += `\n[DATA: ${uiData.props?.chartType || ''} 차트]`;
+            const data = uiData.props?.data;
+            let summary = '';
+            if (Array.isArray(data) && data.length > 0) {
+              const first = data[0];
+              const keys = Object.keys(first).filter(k => typeof first[k] === 'string' || typeof first[k] === 'number');
+              summary = keys.slice(0, 3).join(', ');
+            }
+            content += `\n[CONTEXT: chart ${uiData.props?.chartType || ''} "${uiData.props?.title || ''}" ${data ? (Array.isArray(data) ? data.length+'개' : typeof data) : ''} ${summary ? '('+summary+'...)' : ''}]`;
           } else if (uiData.type === 'property-card') {
-            content += `\n[DATA: 숙소 — ${uiData.props?.name || ''}]`;
+            content += `\n[CONTEXT: property-card "${uiData.props?.name || ''}" id:${uiData.props?.id || '?'}]`;
           } else if (uiData.type === 'layout') {
             const children = uiData.props?.children || [];
-            content += `\n[DATA: 레이아웃 ${children.length}개]`;
+            content += `\n[CONTEXT: layout ${children.length}개 — ${children.map(c => c.type).join(', ')}]`;
           } else if (uiData.type === 'table') {
-            content += `\n[DATA: 표 ${uiData.props?.rows?.length || 0}행]`;
+            const headers = uiData.props?.headers || [];
+            content += `\n[CONTEXT: table ${uiData.props?.rows?.length || 0}행 headers:[${headers.join(', ')}]]`;
           }
         }
         if (m.canvasAdded) {
-          content += '\n[DATA: 캔버스에 대시보드 추가됨]';
+          content += '\n[CONTEXT: 캔버스에 대시보드 생성됨]';
         }
         return { role: m.role, content };
       });

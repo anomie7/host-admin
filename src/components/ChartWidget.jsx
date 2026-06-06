@@ -27,6 +27,47 @@ const PLATFORM_LABELS = {
   liveanywhere: '리브애니웨어',
 };
 
+// Helper: normalize chart data to array format
+function normalizeData(data) {
+  if (Array.isArray(data)) return data;
+  if (data && typeof data === 'object') {
+    // {labels: [...], datasets: [{data: [...]}]} → transform
+    if (data.labels && Array.isArray(data.labels)) {
+      return data.labels.map((label, i) => ({
+        label,
+        value: data.datasets?.[0]?.data?.[i],
+        ...(data.datasets?.[0]?.data?.[i] !== undefined ? { [data.datasets[0].key || 'value']: data.datasets[0].data[i] } : {}),
+      }));
+    }
+    // {platforms: [...], revenues: [...], bookings: [...]} → merge
+    if (data.platforms && Array.isArray(data.platforms)) {
+      return data.platforms.map((p, i) => ({
+        platform: p,
+        revenue: data.revenues?.[i] || 0,
+        bookings: data.bookings?.[i] || 0,
+      }));
+    }
+    // {months: [...], revenue: [...], bookingCounts: [...]}
+    if (data.months && Array.isArray(data.months)) {
+      return data.months.map((m, i) => ({
+        month: m,
+        revenue: data.revenue?.[i] || 0,
+        bookings: data.bookingCounts?.[i] || data.bookings?.[i] || 0,
+      }));
+    }
+    // {properties: [{name, revenue, bookings}, ...]} — nested object
+    if (data.properties && Array.isArray(data.properties)) {
+      return data.properties;
+    }
+    // Single object with numeric values → wrap in array
+    const numericKeys = Object.entries(data).filter(([k, v]) => typeof v === 'number' && !k.startsWith('_'));
+    if (numericKeys.length >= 2) {
+      return [data];
+    }
+  }
+  return [];
+}
+
 function formatWon(amount) {
   if (amount == null) return '₩0';
   if (amount >= 100000000) return `₩${(amount / 100000000).toFixed(1)}억`;
@@ -36,13 +77,12 @@ function formatWon(amount) {
 
 // --- Revenue Line Chart ---
 function RevenueChart({ data }) {
-  if (!data || data.length === 0) return <EmptyChart />;
-
-  const chartData = data.map(d => ({
-    month: `${d.month}월`,
-    revenue: d.revenue || 0,
-    bookings: d.bookings || 0,
+  const chartData = normalizeData(data).map(d => ({
+    month: d.month ? `${String(d.month).replace(/^0/, '')}월` : (d.label || d.day || ''),
+    revenue: d.revenue || d.daily_revenue || d.total_revenue || 0,
+    bookings: d.bookings || d.booking_count || 0,
   }));
+  if (chartData.length === 0) return <EmptyChart />;
 
   return (
     <div style={{ width: '100%', height: 220 }}>
@@ -67,13 +107,12 @@ function RevenueChart({ data }) {
 
 // --- Platform Revenue Bar Chart ---
 function PlatformChart({ data }) {
-  if (!data || data.length === 0) return <EmptyChart />;
-
-  const chartData = data.map(d => ({
-    platform: PLATFORM_LABELS[d.platform] || d.platform,
-    revenue: d.revenue || 0,
-    bookings: d.bookings || 0,
+  const chartData = normalizeData(data).map(d => ({
+    platform: PLATFORM_LABELS[d.platform] || d.platform || d.label || d.name || '',
+    revenue: d.revenue || d.total_revenue || 0,
+    bookings: d.bookings || d.booking_count || 0,
   }));
+  if (chartData.length === 0) return <EmptyChart />;
 
   return (
     <div style={{ width: '100%', height: 200 }}>
@@ -102,13 +141,12 @@ function PlatformChart({ data }) {
 
 // --- Occupancy Bar Chart ---
 function OccupancyChart({ data }) {
-  if (!data || data.length === 0) return <EmptyChart />;
-
-  const chartData = data.map(d => ({
-    month: `${d.month}월`,
-    rate: d.rate || 0,
-    bookings: d.bookings || 0,
+  const chartData = normalizeData(data).map(d => ({
+    month: d.month ? `${String(d.month).replace(/^0/, '')}월` : (d.label || ''),
+    rate: d.rate || d.occupancy_rate || 0,
+    bookings: d.bookings || d.booking_count || 0,
   }));
+  if (chartData.length === 0) return <EmptyChart />;
 
   return (
     <div style={{ width: '100%', height: 200 }}>
@@ -133,13 +171,12 @@ function OccupancyChart({ data }) {
 
 // --- Status Pie Chart ---
 function StatusChart({ data }) {
-  if (!data || data.length === 0) return <EmptyChart />;
-
-  const chartData = data.map(d => ({
-    name: STATUS_LABELS[d.status] || d.status,
-    value: d.count || 0,
-    status: d.status,
+  const chartData = normalizeData(data).map(d => ({
+    name: STATUS_LABELS[d.status] || d.status || d.label || d.name || '',
+    value: d.count || d.value || 0,
+    status: d.status || d.label || '',
   }));
+  if (chartData.length === 0) return <EmptyChart />;
 
   return (
     <div style={{ width: '100%', height: 200, display: 'flex', alignItems: 'center' }}>
@@ -179,12 +216,13 @@ function StatusChart({ data }) {
 
 // --- Summary Stats Card ---
 function SummaryStats({ data }) {
-  if (!data) return <EmptyChart />;
+  const d = Array.isArray(data) ? data[0] || {} : data;
+  if (!d || Object.keys(d).length === 0) return <EmptyChart />;
   const items = [
-    { label: '총 수익', value: formatWon(data.totalRevenue), color: 'var(--accent)' },
-    { label: '총 예약', value: `${data.totalBookings}건`, color: 'var(--secondary)' },
-    { label: '평균 요금', value: formatWon(data.avgRate), color: '#b07a28' },
-    { label: '평균 점유율', value: `${data.occupancyRate || 0}%`, color: '#4a78a8' },
+    { label: '총 수익', value: formatWon(d.totalRevenue || d.total_revenue || d.revenue), color: 'var(--accent)' },
+    { label: '총 예약', value: `${d.totalBookings || d.total_bookings || d.bookings || 0}건`, color: 'var(--secondary)' },
+    { label: '평균 요금', value: formatWon(d.avgRate || d.avg_rate || d.average_rate), color: '#b07a28' },
+    { label: '평균 점유율', value: `${d.occupancyRate || d.occupancy_rate || 0}%`, color: '#4a78a8' },
   ];
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
@@ -202,15 +240,16 @@ function SummaryStats({ data }) {
 
 // --- Property Ranking Horizontal Bar Chart ---
 function PropertyRanking({ data, sortBy }) {
-  if (!data || data.length === 0) return <EmptyChart />;
-  const maxVal = Math.max(...data.map(d => sortBy === 'revenue' ? d.total_revenue : d.booking_count), 1);
+  const chartData = normalizeData(data).filter(d => d.name || d.property_name);
+  if (chartData.length === 0) return <EmptyChart />;
+  const maxVal = Math.max(...chartData.map(d => sortBy === 'revenue' ? (d.total_revenue || d.revenue || 0) : (d.booking_count || d.bookings || 0)), 1);
   const barColor = sortBy === 'revenue' ? 'var(--accent)' : 'var(--secondary)';
   const formatVal = sortBy === 'revenue' ? v => formatWon(v) : v => `${v}건`;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '4px 0' }}>
-      {data.map((d, i) => {
-        const val = sortBy === 'revenue' ? d.total_revenue : d.booking_count;
+      {chartData.map((d, i) => {
+        const val = sortBy === 'revenue' ? (d.total_revenue || d.revenue || 0) : (d.booking_count || d.bookings || 0);
         const pct = (val / maxVal) * 100;
         return (
           <div key={d.property_id || i}>
