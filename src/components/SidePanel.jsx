@@ -1,24 +1,27 @@
 import React from 'react';
 import ChatPanel from './ChatPanel';
 
-export default function SidePanel({ mobileOpen, onMobileClose }) {
-  const isMobileOverlay = mobileOpen !== undefined;
-  const panelClass = `side-panel${isMobileOverlay && mobileOpen ? ' side-panel--open' : ''}`;
+export default function SidePanel({ open, onClose, isMobile }) {
+  const panelClass = `side-panel${open ? ' side-panel--open' : ''}`;
 
   return (
-    <aside className={panelClass} aria-label="AI 어시스턴트">
-      <div className="side-panel-header">
-        <span style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 600 }}>💬 AI 어시스턴트</span>
-        {isMobileOverlay && (
-          <button className="side-panel-close" onClick={onMobileClose} aria-label="닫기" style={{
-            background: 'none', border: 'none', color: 'var(--text-dim)',
-            fontSize: 18, cursor: 'pointer', padding: '4px 8px', borderRadius: 4,
-          }}>✕</button>
-        )}
-      </div>
-      <div className="side-panel-body">
-        <ChatPanel />
-      </div>
-    </aside>
+    <>
+      {!isMobile && (
+        <div className="side-panel-collapse" onClick={open ? onClose : undefined} title={open ? '접기' : '펼치기'}>
+          <span>◀</span>
+        </div>
+      )}
+      <aside className={panelClass} aria-label="AI 어시스턴트">
+        <div className="side-panel-header">
+          <span style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 600 }}>💬 AI 어시스턴트</span>
+          {isMobile && (
+            <button className="side-panel-close" onClick={onClose} aria-label="닫기">✕</button>
+          )}
+        </div>
+        <div className="side-panel-body">
+          <ChatPanel />
+        </div>
+      </aside>
+    </>
   );
 }

@@ -442,16 +442,24 @@ textarea.form-input { resize: vertical; min-height: 80px; }
 
 /* ===== Side Panel ===== */
 .side-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
   width: min(440px, 35vw);
   min-width: 320px;
+  height: 100vh;
   background: var(--bg-elevated);
   border-left: 1px solid var(--border-light);
   display: flex;
   flex-direction: column;
-  height: 100vh;
-  position: sticky;
-  top: 0;
-  flex-shrink: 0;
+  z-index: 40;
+  transform: translateX(100%);
+  transition: transform 250ms ease;
+  box-shadow: -4px 0 24px rgba(45, 31, 20, 0.08);
+}
+
+.side-panel.side-panel--open {
+  transform: translateX(0);
 }
 
 .side-panel-header {
@@ -476,6 +484,27 @@ textarea.form-input { resize: vertical; min-height: 80px; }
 .side-panel-close:hover {
   background: var(--bg-secondary);
   color: var(--text-primary);
+}
+
+/* Desktop collapse handle (thin strip between main and panel) */
+.side-panel-collapse {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  cursor: pointer;
+  background: var(--bg-secondary);
+  border-left: 1px solid var(--border-light);
+  border-right: 1px solid var(--border-light);
+  color: var(--text-dim);
+  font-size: 9px;
+  transition: all 150ms ease;
+  user-select: none;
+  flex-shrink: 0;
+}
+.side-panel-collapse:hover {
+  background: var(--accent-glow);
+  color: var(--accent);
 }
 
 .side-panel-body {
@@ -790,22 +819,8 @@ textarea.form-input { resize: vertical; min-height: 80px; }
 
 /* ===== Responsive ===== */
 @media (max-width: 768px) {
-  .app-layout { flex-direction: column; }
-  .app-layout .side-panel {
-    position: fixed;
-    top: 0;
-    right: 0;
-    width: 100vw;
-    height: 100vh;
-    z-index: 55;
-    border-left: none;
-    transform: translateX(100%);
-    transition: transform 250ms ease;
-    box-shadow: -4px 0 24px rgba(45, 31, 20, 0.12);
-  }
-  .app-layout .side-panel.side-panel--open {
-    transform: translateX(0);
-  }
+  .side-panel-collapse { display: none !important; }
+  .side-panel { width: 100vw; min-width: unset; z-index: 55; }
   .side-overlay {
     position: fixed;
     inset: 0;
@@ -813,17 +828,10 @@ textarea.form-input { resize: vertical; min-height: 80px; }
     z-index: 54;
     animation: fadeIn 200ms ease;
   }
-  .mobile-ai-toggle {
-    display: flex !important;
-  }
   .sidebar { width: 48px; min-width: 48px; }
   .sidebar-link { height: 36px; }
+  .sidebar-logo { font-size: 17px; }
   .main-header { padding: 16px; }
   .main-header h1 { font-size: 17px; }
   .main-content { padding: 16px; }
-}
-
-@media (min-width: 769px) {
-  .mobile-ai-toggle { display: none !important; }
-  .side-overlay { display: none !important; }
 }
