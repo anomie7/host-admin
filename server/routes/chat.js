@@ -668,53 +668,71 @@ function executeTool(name, args) {
   }
 }
 
-// ===== System Prompt =====
+// ===== System Prompts (2-Phase: Planner + Executor) =====
 
-function getSystemPrompt() {
+function getPlannerPrompt() {
   const today = new Date().toISOString().slice(0, 10);
-  return `You are a Korean host admin assistant for "Warm Stay". Today is ${today}.
+  return `You are a PLANNER for "Warm Stay" host admin assistant. Today is ${today}.
 
-## CRITICAL WORKFLOW (YOU MUST FOLLOW THIS EXACTLY)
-1. Analyze what data the user needs
-2. First output a JSON with your plan — ALWAYS include "plan" and "message"
-3. Then IMMEDIATELY call the first tool in your plan
-4. ALWAYS finish by calling render_ui() — this is MANDATORY
-5. Finally output { "message": "한국어 요약" }
+Your ONLY job: analyze what the user wants and output a precise tool-call plan.
+You CANNOT call tools yourself. You ONLY output the plan.
 
-## ⚠️ NEVER ANSWER FROM MEMORY
-You do NOT know the real booking data. Even if you think you know the answer,
-you MUST look up actual data using tools. NEVER make up numbers.
-
-## Response format
-FIRST response (with plan + first tool call):
-{ "plan": ["execute_sql(\"SELECT...\")", "render_ui(table, ...)"], "message": "한국어 설명" }
-Then call execute_sql() as your first tool.
-
-FINAL response (after all tools done):
-{ "message": "한국어 요약" }
-- Do NOT include "ui" in JSON — render_ui() tool handles that
-- Never output markdown tables or raw data
-
-## Available TOOLS (only 3 for data)
-- get_db_schema(): Check table structures
-- execute_sql(sql, params?): Run SELECT queries for data analysis
-- render_ui(type, props): ALWAYS call last to show results
+## Available tools (for your plan — you don't call them)
+Data tools:
+- get_db_schema() — check database table structures
+- execute_sql(sql) — run SELECT queries. Use JOIN, GROUP BY, aggregation as needed.
+- render_ui(type, props) — ALWAYS include this as the LAST step
 
 Data modification tools:
-- update_booking_status(), add_property_tag(), remove_property_tag()
+- update_booking_status(booking_id, status)
+- add_property_tag(property_id, tag)
+- remove_property_tag(property_id, tag)
 
-## UI types for render_ui
-- stats-card: { label, value, subtext } — simple metrics
+## UI types for render_ui (last step)
+- stats-card: { label, value, subtext }
+- booking-list: { title, bookings: [{id, guest_name, property_name, check_in, check_out, status, amount}] }
+- chart: { chartType: "revenue"|"platform"|"property-ranking"|"summary"|"status", title, data }
+- table: { title, headers, rows }
+- html: { content: "HTML with inline styles" }
+
+## Plan rules
+1. Plan is an array of strings: ["tool_name(args)", ...]
+2. ALWAYS end with render_ui()
+3. First call get_db_schema() if you need table structure
+4. For simple questions → execute_sql() directly
+5. Before complex queries → get_db_schema() first
+
+## NEVER ANSWER FROM MEMORY
+You do NOT know the database contents. You MUST look up data using tools.
+
+## Output format (JSON ONLY — no other text)
+{ "plan": ["get_db_schema()", "execute_sql(\"SELECT ...\")", "render_ui(\"table\", {title: \"...\", headers: [...], rows: [...]})"], "message": "한국어 설명" }`;
+}
+
+function getExecutorPrompt() {
+  const today = new Date().toISOString().slice(0, 10);
+  return `You are an EXECUTOR for "Warm Stay" host admin assistant. Today is ${today}.
+
+Your ONLY job: execute the given plan step by step using tools.
+
+## CRITICAL RULES
+1. Call tools ONE by ONE in the plan order
+2. Each tool call: get result → include it in context → call next tool
+3. ALWAYS end with render_ui(type, props) — this is MANDATORY
+4. Then output { "message": "한국어 요약" }
+5. NEVER answer from memory — use tools for EVERY data point
+6. NEVER include "ui" in your JSON response — render_ui() handles display
+
+## Available tools
+get_db_schema(), execute_sql(sql, params?), render_ui(type, props)
+update_booking_status(), add_property_tag(), remove_property_tag()
+
+## UI types for render_ui (MUST call this as last step!)
+- stats-card: { label, value, subtext }
 - booking-list: { title, bookings: [...] }
 - chart: { chartType: "revenue"|"platform"|"property-ranking"|"summary"|"status", title, data }
 - table: { title, headers, rows }
-- html: { content: "HTML with inline styles" } — for custom layouts
-
-## STRATEGY
-- For ANY data question → call execute_sql() directly
-- Before complex queries → call get_db_schema() first
-- Use JOIN, GROUP BY, aggregation for analysis
-- For visualizations → try chart or table first, html as fallback`;
+- html: { content: "HTML with inline styles" }`;
 }
 
 // ===== Chat Handler =====
@@ -785,7 +803,7 @@ router.post('/', async (req, res) => {
 
     // Strip any existing system messages, we use our own
     const userMessages = messages.filter(m => m.role !== 'system');
-    const fullMessages = [{ role: 'system', content: getSystemPrompt() }, ...userMessages];
+    const fullMessages = [{ role: 'system', content: getExecutorPrompt() }, ...userMessages];
 
     // First call — with tools
     const firstResponse = await callDeepSeek(fullMessages, true);
@@ -846,7 +864,9 @@ router.post('/', async (req, res) => {
           
           // Intercept render_ui — don't execute, just store and return ok
           if (name === 'render_ui') {
-            pendingUI = { type: args.type, props: args.props };
+            let props = args.props;
+            if (typeof props === 'string') { try { props = JSON.parse(props); } catch {} }
+            pendingUI = { type: args.type, props: props };
             console.log(`🎨 render_ui stored: ${args.type}`);
             const resultStr = JSON.stringify({ ok: true, rendered: args.type });
             messageLog.push({ role: 'tool', tool_call_id: tc.id, content: resultStr });
@@ -901,7 +921,9 @@ router.post('/', async (req, res) => {
               }
               // Intercept render_ui
               if (name === 'render_ui') {
-                pendingUI = { type: args.type, props: args.props };
+                let props = args.props;
+                if (typeof props === 'string') { try { props = JSON.parse(props); } catch {} }
+                pendingUI = { type: args.type, props: props };
                 console.log(`🎨 render_ui (round ${toolRound + 2}): ${args.type}`);
                 currentLog.push({ role: 'tool', tool_call_id: tc.id, content: JSON.stringify({ ok: true, rendered: args.type }) });
                 continue;
@@ -1091,17 +1113,11 @@ router.post('/stream', async (req, res) => {
     }
 
     const userMessages = messages.filter(m => m.role !== 'system');
-    const fullMessages = [{ role: 'system', content: getSystemPrompt() }, ...userMessages];
     const dataModifyingTools = new Set();
     let pendingUI = null;
     let lastDataTool = null;
+    let planSteps = [];
 
-    let currentLog = fullMessages;
-    let toolRound = 0;
-    let planSteps = []; // Track plan: [{label, status}]
-    let planSent = false;
-
-    // Helper: send step event
     const sendStep = (index, status) => {
       if (index >= 0 && index < planSteps.length) {
         planSteps[index].status = status;
@@ -1109,14 +1125,93 @@ router.post('/stream', async (req, res) => {
       }
     };
 
-    for (let round = 0; round < 20; round++) {
-      const response = await callDeepSeek(currentLog, round === 0 || true);
-      if (response.error === 'NO_API_KEY') {
-        send('complete', { message: 'AI 어시스턴트를 사용하려면 DeepSeek API 키가 필요합니다.', ui: null });
-        return res.end();
+    // =============================================
+    // PHASE 1: PLANNER (no tools — AI outputs plan)
+    // =============================================
+    const plannerLog = [{ role: 'system', content: getPlannerPrompt() }, ...userMessages];
+    const plannerResponse = await callDeepSeek(plannerLog, false);
+    if (plannerResponse.error) {
+      send('complete', { message: 'AI 응답 생성 중 오류가 발생했습니다.', ui: null });
+      return res.end();
+    }
+    const plannerChoice = plannerResponse.choices?.[0]?.message;
+    let aiPlanMessage = null;
+    let planContent = '';
+
+    if (plannerChoice && plannerChoice.content) {
+      planContent = plannerChoice.content;
+      // Parse the plan from JSON
+      const parsed = parseAIResponse(planContent);
+      if (parsed && parsed.plan && Array.isArray(parsed.plan) && parsed.plan.length > 0) {
+        planSteps = parsed.plan.map(s => ({
+          label: getToolLabel(s.split('(')[0]),
+          status: 'pending'
+        }));
+        // If last step isn't render_ui, append it
+        if (planSteps.length > 0 && !planSteps[planSteps.length - 1].label.includes('UI')) {
+          planSteps.push({ label: '🎨 UI 생성', status: 'pending' });
+        }
+        send('plan', { steps: planSteps.map(s => s.label) });
+        aiPlanMessage = parsed.plan;
+        console.log(`📋 Planner: ${JSON.stringify(planSteps.map(s => s.label))}`);
       }
-      if (response.error === 'API_ERROR') {
-        send('complete', { message: 'AI 서비스에 일시적인 문제가 있습니다.', ui: null });
+    }
+
+    // Fallback: if planner didn't produce a valid plan, auto-generate
+    if (!aiPlanMessage && planSteps.length === 0) {
+      // Try a second planner call with stronger instruction
+      const retryLog = [{ role: 'system', content: getPlannerPrompt() + '\n\nIMPORTANT: You MUST output a JSON plan. No other text.' }, ...userMessages];
+      const retryResponse = await callDeepSeek(retryLog, false);
+      const retryChoice = retryResponse.choices?.[0]?.message;
+      if (retryChoice && retryChoice.content) {
+        const parsed = parseAIResponse(retryChoice.content);
+        if (parsed && parsed.plan && Array.isArray(parsed.plan) && parsed.plan.length > 0) {
+          planSteps = parsed.plan.map(s => ({
+            label: getToolLabel(s.split('(')[0]),
+            status: 'pending'
+          }));
+          if (planSteps.length > 0 && !planSteps[planSteps.length - 1].label.includes('UI')) {
+            planSteps.push({ label: '🎨 UI 생성', status: 'pending' });
+          }
+          send('plan', { steps: planSteps.map(s => s.label) });
+          aiPlanMessage = parsed.plan;
+          console.log(`📋 Planner (retry): ${JSON.stringify(planSteps.map(s => s.label))}`);
+        }
+      }
+    }
+
+    // Still no plan? Use auto-query fallback
+    if (!aiPlanMessage) {
+      const autoResult = autoQuery(userMessages);
+      if (autoResult) {
+        planSteps = [{ label: '🔎 데이터 분석', status: 'completed' }];
+        send('plan', { steps: ['🔎 데이터 분석'] });
+        sendStep(0, 'completed');
+        send('complete', { message: autoResult.count + '건 조회했습니다.', ui: autoResult.ui });
+      } else {
+        send('complete', { message: '죄송합니다, 요청을 이해하지 못했습니다.', ui: null });
+      }
+      return res.end();
+    }
+
+    // =============================================
+    // PHASE 2: EXECUTOR (tools ON — AI executes plan)
+    // =============================================
+    const plannerSummary = `[PLAN] ${JSON.stringify(aiPlanMessage)}\n\nUser message: ${userMessages.map(m => m.content || '').join(' ')}\n\nExecute this plan now using tools.`;
+    const executorLog = [
+      { role: 'system', content: getExecutorPrompt() },
+      ...userMessages,
+      { role: 'assistant', content: `My plan: ${JSON.stringify(aiPlanMessage)}. Now let me execute it.` },
+    ];
+
+    let currentLog = executorLog;
+    let toolRound = 0;
+    const MAX_TOOL_ROUNDS = 20;
+
+    while (toolRound < MAX_TOOL_ROUNDS) {
+      const response = await callDeepSeek(currentLog, true);
+      if (response.error) {
+        send('complete', { message: 'AI 응답 생성 중 오류가 발생했습니다.', ui: null });
         return res.end();
       }
 
@@ -1126,87 +1221,26 @@ router.post('/stream', async (req, res) => {
         return res.end();
       }
 
-      // On first round, extract plan from AI content
-      if (round === 0 && choice.content && !planSent) {
-        // Try to extract plan from JSON
-        const planMatch = choice.content.match(/"plan"\s*:\s*(\[[\s\S]*?(?<!\\)"\])/);
-        if (planMatch) {
-          try {
-            const plan = JSON.parse(planMatch[1]);
-            if (Array.isArray(plan) && plan.length > 0) {
-              planSteps = plan.map(s => ({
-                label: getToolLabel(s.split('(')[0]),
-                status: 'pending'
-              }));
-              send('plan', { steps: planSteps.map(s => s.label) });
-              planSent = true;
-              console.log(`📋 SSE AI plan: ${JSON.stringify(planSteps.map(s => s.label))}`);
-            }
-          } catch {}
-        }
-      }
-
-      // If no tool calls, we have the final response
+      // No tool calls → final text response
       if (!choice.tool_calls || choice.tool_calls.length === 0) {
         const content = choice.content || '';
         const result = parseAIResponse(content);
         if (result) {
           if (dataModifyingTools.size > 0) result._refetch = 'properties';
-          // Auto-generate plan if none yet
-          if (!planSent && planSteps.length === 0) {
-            planSteps = [{ label: '🔎 데이터 분석', status: 'completed' }];
-            send('plan', { steps: planSteps.map(s => s.label) });
-          }
-          // Mark all steps completed
+          if (pendingUI) result.ui = pendingUI;
+          // Mark remaining steps completed
           planSteps.forEach((_, i) => sendStep(i, 'completed'));
           send('complete', result);
         } else {
-          send('complete', { message: cleanMessage(content), ui: null });
+          planSteps.forEach((_, i) => sendStep(i, 'completed'));
+          send('complete', { message: cleanMessage(content), ui: pendingUI || null });
         }
         return res.end();
       }
 
       // Process tool calls
       currentLog.push(choice);
-      
-      // Auto-generate plan from first batch of tool calls
-      if (!planSent) {
-        // Get all data tools from this batch
-        const newDataTools = choice.tool_calls
-          .filter(tc => tc.function?.name !== 'render_ui')
-          .map(tc => getToolLabel(tc.function.name));
-        // Add render_ui at the end if any data tools exist
-        if (newDataTools.length > 0) {
-          // Also include render_ui
-          const allSteps = [...newDataTools, '🎨 UI 생성'];
-          planSteps = allSteps.map(label => ({ label, status: 'pending' }));
-          send('plan', { steps: planSteps.map(s => s.label) });
-          planSent = true;
-          console.log(`📋 SSE auto-plan: ${JSON.stringify(planSteps.map(s => s.label))}`);
-        }
-      } else {
-        // Plan already exists, but new data tools might appear in later rounds
-        // Append them to the plan if they're not already there
-        for (const tc of choice.tool_calls) {
-          if (tc.function?.name === 'render_ui') continue;
-          const label = getToolLabel(tc.function.name);
-          const alreadyInPlan = planSteps.some(s => s.label === label);
-          if (!alreadyInPlan) {
-            // Insert before the last render_ui step (or at end)
-            const renderUiIdx = planSteps.findIndex(s => s.label === '🎨 UI 생성');
-            if (renderUiIdx >= 0) {
-              planSteps.splice(renderUiIdx, 0, { label, status: 'pending' });
-            } else {
-              planSteps.push({ label, status: 'pending' });
-            }
-            // Re-send full plan
-            send('plan', { steps: planSteps.map(s => s.label) });
-            console.log(`📋 SSE plan extended: +${label}`);
-          }
-        }
-      }
 
-      let stepIndex = 0;
       for (const tc of choice.tool_calls) {
         if (tc.type !== 'function') continue;
         const { name, arguments: argsStr } = tc.function;
@@ -1216,41 +1250,34 @@ router.post('/stream', async (req, res) => {
         const label = getToolLabel(name);
         send('tool', { name, label, status: 'running' });
 
-        // Find the best matching step: exact label match, then first pending
+        // Find step index
         const exactIdx = planSteps.findIndex(s => s.label === label);
         const firstPendingIdx = planSteps.findIndex(s => s.status === 'pending');
         const activeIdx = exactIdx >= 0 ? exactIdx : firstPendingIdx;
-        
-        if (activeIdx >= 0 && activeIdx < planSteps.length) {
-          sendStep(activeIdx, 'running');
-        }
+        if (activeIdx >= 0) sendStep(activeIdx, 'running');
 
         if (['add_property_tag', 'remove_property_tag', 'update_booking_status'].includes(name)) {
           dataModifyingTools.add(name);
         }
 
-        // Intercept render_ui
         if (name === 'render_ui') {
-          pendingUI = { type: args.type, props: args.props };
-          console.log(`🎨 SSE render_ui: ${args.type}`);
+          // Ensure props is parsed as object
+          let props = args.props;
+          if (typeof props === 'string') { try { props = JSON.parse(props); } catch {} }
+          pendingUI = { type: args.type, props: props };
+          console.log(`🎨 Executor render_ui: ${args.type}`);
           send('tool', { name, label, status: 'done' });
           if (activeIdx >= 0) sendStep(activeIdx, 'completed');
           currentLog.push({ role: 'tool', tool_call_id: tc.id, content: JSON.stringify({ ok: true, rendered: args.type }) });
-          stepIndex++;
           continue;
         }
 
-        // Execute the tool
-        const startTime = Date.now();
         const result = executeTool(name, args);
-        const elapsed = Date.now() - startTime;
-        
-        // Track last data tool for fallback
         if (!['get_db_schema', 'render_ui'].includes(name)) {
           lastDataTool = { name, result };
         }
 
-        send('tool', { name, label, status: 'done', elapsed });
+        send('tool', { name, label, status: 'done' });
         if (activeIdx >= 0) sendStep(activeIdx, 'completed');
 
         currentLog.push({
@@ -1258,16 +1285,19 @@ router.post('/stream', async (req, res) => {
           tool_call_id: tc.id,
           content: JSON.stringify(result),
         });
-        stepIndex++;
       }
+      toolRound++;
     }
 
     // Max rounds — fallback
+    planSteps.forEach((_, i) => sendStep(i, 'completed'));
     if (pendingUI) {
       send('complete', { message: '조회 완료', ui: pendingUI });
-    } else {
+    } else if (lastDataTool) {
       const autoUI = autoGenerateUI(lastDataTool);
       send('complete', { message: '조회 완료', ui: autoUI || null });
+    } else {
+      send('complete', { message: '조회 완료', ui: null });
     }
     res.end();
 

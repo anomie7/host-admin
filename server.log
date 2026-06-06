@@ -1,28 +1,10 @@
-◇ injected env (1) from ../.env // tip: ⌘ multiple files { path: ['.env.local', '.env'] }
+◇ injected env (1) from ../.env // tip: ◈ encrypted .env [www.dotenvx.com]
 🏨 Host Admin server running on port 4001
-🔧 Tool call: get_db_schema({})
-🔧 Tool call (round 2): execute_sql({"sql":"SELECT b.id, b.guest_name, b.check_in, b.check_out, b.status, b.amount, p.name AS property_name\nFROM bookings b\nJOIN properties p ON b.property_id = p.id\nWHERE b.check_in >= '2026-06-08' AND b.check_in <= '2026-06-14'\nORDER BY b.check_in ASC"})
-🔧 Tool call (round 3): render_ui({"type":"booking-list","props":{"title":"📅 다음주 체크인 예약 (6/8~6/14)","bookings":[{"id":54,"guest_name":"이정재","check_in":"2026-06-11","check_out":"2026-06-13","status":"upcoming","amount":164484,"property_name":"종로 한옥 게스트하우스"}]}})
-🎨 render_ui (round 3): booking-list
-🎨 Merged render_ui: booking-list
-📦 AI response: no canvas
-📋 Auto-plan from 3 tool calls
-🔧 Tool call: get_db_schema({})
-🔧 Tool call (round 2): execute_sql({"sql":"SELECT id, name FROM properties WHERE name LIKE '%성수%플랫%' OR name LIKE '%성수%'"})
-🔧 Tool call (round 3): execute_sql({"sql":"SELECT platform, COUNT(*) as 예약수, SUM(amount) as 총수익, ROUND(AVG(amount), 0) as 평균수익\nFROM bookings\nWHERE property_id = 3\nGROUP BY platform\nORDER BY 예약수 DESC"})
-🔧 Tool call (round 4): render_ui({"type":"chart","props":"{\"chartType\": \"platform\", \"title\": \"🏠 성수 미니멀 플랫 - 플랫폼별 예약 현황\", \"data\": [{\"platform\": \"airbnb\", \"예약수\": 8, \"총수익\": 1628805, \"평균수익\": 203601}, {\"platform\": \"booking\", \"예약수\": 3, \"총수익\": 848647, \"평균수익\": 282882}, {\"platform\": \"liveanywhere\", \"예약수\": 1, \"총수익\": 323919, \"평균수익\": 323919}]}"})
-🎨 render_ui (round 4): chart
-🎨 Merged render_ui: chart
-📦 AI response: no canvas
-📋 Auto-plan from 4 tool calls
-🔧 Tool call: execute_sql({"sql":"SELECT p.id, p.name, COUNT(*) as booking_count, SUM(b.total_price) as total_revenue\nFROM bookings b\nJOIN properties p ON b.property_id = p.id\nGROUP BY p.id, p.name\nORDER BY booking_count DESC\nLIMIT 10"})
-🔧 Tool call (round 2): get_db_schema({})
-🔧 Tool call (round 3): execute_sql({"sql":"SELECT p.id, p.name, COUNT(*) as booking_count, SUM(b.amount) as total_revenue\nFROM bookings b\nJOIN properties p ON b.property_id = p.id\nGROUP BY p.id, p.name\nORDER BY booking_count DESC\nLIMIT 10"})
-🔧 Tool call (round 4): render_ui({"type":"chart","props":"{\"chartType\": \"property-ranking\", \"title\": \"숙소별 예약 건수 TOP 10\", \"data\": [{\"name\": \"코지 강남 스튜디오\", \"value\": 12, \"revenue\": 2885293}, {\"name\": \"성수 미니멀 플랫\", \"value\": 12, \"revenue\": 2801371}, {\"name\": \"여수 밤바다 펜션\", \"value\": 12, \"revenue\": 3091075}, {\"name\": \"속초 바다뷰 스테이\", \"value\": 12, \"revenue\": 3900343}, {\"name\": \"홍대 아티스트 로프트\", \"value\": 10, \"revenue\": 3838459}, {\"name\": \"종로 한옥 게스트하우스\", \"value\": 10, \"revenue\": 1926444}, {\"name\": \"해운대 오션뷰 레지던스\", \"value\": 10, \"revenue\": 4655046}, {\"name\": \"제주 성산의 뜨락\", \"value\": 10, \"revenue\": 2332234}, {\"name\": \"용산 리버뷰 하우스\", \"value\": 8, \"revenue\": 4386304}, {\"name\": \"이태원 힐탑 스위트\", \"value\": 8, \"revenue\": 3719438}]}"})
-🎨 render_ui (round 4): chart
-🎨 Merged render_ui: chart
-📦 AI response: no canvas
-📋 Auto-plan from 4 tool calls
-⚠️  Direct response not JSON — raw: 다음주(2026-06-07 ~ 2026-06-13) 체크인 예정인 예약은 총 4건입니다.  | 숙소명 | 게스트명 | 체크인 | 체크아웃 | 플랫폼 | |--------|-----
-⚠️  Direct response not JSON — raw: 어떤 예약을 어떤 상태로 변경할까요?  현재 가능한 상태는 다음과 같습니다: - **upcoming** (예정) - **checked_in** (체크인) - **checked_ou
-⚠️  Direct response not JSON — raw: 3월(2026-03-01 ~ 2026-03-31) 예약 현황을 분석한 결과입니다.  **📊 3월 예약 요약** - **총 예약 건수**: 10건 - **총 수익**: 2,820,
+📋 SSE auto-plan: ["🗄️ DB 구조 확인","🎨 UI 생성"]
+📋 SSE plan extended: +🔎 데이터 분석
+🎨 SSE render_ui: stats-card
+📋 SSE auto-plan: ["🔎 데이터 분석","🎨 UI 생성"]
+🎨 SSE render_ui: chart
+📋 SSE auto-plan: ["🔎 데이터 분석","🎨 UI 생성"]
+📋 SSE plan extended: +🗄️ DB 구조 확인
+🎨 SSE render_ui: booking-list
