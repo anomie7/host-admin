@@ -688,7 +688,7 @@ async function callDeepSeek(messages, toolsEnabled = true) {
   }
 
   const body = {
-    model: 'deepseek-chat',
+    model: 'deepseek-v4-pro',
     messages,
     max_tokens: 8192,
     temperature: 0.1,
