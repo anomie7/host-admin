@@ -19,12 +19,12 @@ export default function SidePanel({ open, onClose, onToggle, isMobile }) {
   const startWidth = useRef(0);
   const panelRef = useRef(null);
 
-  // Apply custom width to panel
+  // Apply custom width to panel (desktop only)
   useEffect(() => {
-    if (panelRef.current && panelWidth) {
+    if (!isMobile && panelRef.current && panelWidth) {
       panelRef.current.style.setProperty('--panel-width', `${panelWidth}px`);
     }
-  }, [panelWidth]);
+  }, [panelWidth, isMobile]);
 
   const handleMouseDown = useCallback((e) => {
     e.preventDefault();
@@ -80,7 +80,7 @@ export default function SidePanel({ open, onClose, onToggle, isMobile }) {
         ref={panelRef}
         className={panelClass}
         aria-label="AI 어시스턴트"
-        style={panelWidth && open ? { width: panelWidth, minWidth: MIN_WIDTH } : undefined}
+        style={!isMobile && panelWidth && open ? { width: panelWidth, minWidth: MIN_WIDTH } : undefined}
       >
         <div className="side-panel-header">
           <span style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 600 }}>💬 AI 어시스턴트</span>

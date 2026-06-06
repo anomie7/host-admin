@@ -1,21 +1,21 @@
-◇ injected env (1) from ../.env // tip: ⌘ enable debugging { debug: true }
-🏨 Host Admin server running on port 4001
-🔧 Tool call: get_chart_data({})
-🔧 Tool call (round 2): get_db_schema({})
-🔧 Tool call (round 3): execute_sql({"sql":"SELECT p.name, b.platform, COUNT(*) as booking_count, SUM(b.amount) as total_revenue\nFROM bookings b\nJOIN properties p ON b.property_id = p.id\nWHERE p.name LIKE '%성수%'\nGROUP BY p.name, b.platform\nORDER BY p.name, total_revenue DESC"})
-🔧 Tool call (round 4): execute_sql({"sql":"SELECT p.name, b.platform, COUNT(*) as booking_count, SUM(b.amount) as total_revenue\nFROM bookings b\nJOIN properties p ON b.property_id = p.id\nWHERE p.name LIKE '%성수%'\nGROUP BY p.name, b.platform\nORDER BY p.name, total_revenue DESC"})
-📦 AI response: no canvas
-🔧 Tool call: get_db_schema({})
-🔧 Tool call (round 2): search_bookings({"date_from":"2026-06-07","date_to":"2026-06-13","status":"upcoming"})
-🔧 Tool call (round 3): search_bookings({"date_from":"2026-06-07","date_to":"2026-06-13"})
-⚠️  AI response not JSON — raw: 다음주(6/7~6/13) 체크인 예정이신 분은 **이정재** 님 한 분이십니다.  - **숙소**: 종로 한옥 게스트하우스 - **체크인**: 6월 11일 (목) - **체크아웃*
-🔧 Tool call: get_chart_data({})
-🔧 Tool call (round 2): get_dashboard_summary({})
-⚠️  AI response not JSON — raw: 2026년 월별 수익 추이 그래프입니다. 2월(₩3,561,355)과 11월(₩3,398,264)에 수익이 가장 높았고, 4월(₩1,415,610)이 가장 낮았습니다. 현재 6월은
-⚠️  Direct response not JSON — raw: 7월에는 총 **5건**의 예약이 있습니다.  | 게스트명 | 숙소 | 체크인 | 체크아웃 | 금액 | 상태 | |---------|------|-------|---------|-
-⚠️  Direct response not JSON — raw: 예약 건수가 가장 많은 숙소는 **성수 미니멀 플랫**입니다.  | 순위 | 숙소명 | 예약 건수 | 총 수익 | |:---:|--------|:--------:|:-------:
-🔧 Tool call: get_dashboard_summary({})
-🔧 Tool call: get_chart_data({})
-🔧 Tool call: get_booking_stats_by_property({"sort_by":"booking_count"})
-🔄 Auto-generating canvas (AI failed to include it)
-⚠️  Direct response not JSON — raw: 가장 임박한 예약은 **오늘(6/6) 체크인**하시는 **박민준** 님입니다.  - **숙소**: 성수 미니멀 플랫 - **체크인**: 6월 6일 (토) - **체크아웃**: 6월
+◇ injected env (1) from ../.env // tip: ⌘ custom filepath { path: '/custom/path/.env' }
+node:events:485
+      throw er; // Unhandled 'error' event
+      ^
+
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4001
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at node:net:2206:7
+    at process.processTicksAndRejections (node:internal/process/task_queues:90:21)
+Emitted 'error' event on Server instance at:
+    at emitErrorNT (node:net:1976:8)
+    at process.processTicksAndRejections (node:internal/process/task_queues:90:21) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '0.0.0.0',
+  port: 4001
+}
+
+Node.js v24.2.0
