@@ -72,6 +72,7 @@ function componentLabel(type) {
     'property-card': '🏠 숙소 정보',
     'chart': '📈 차트',
     'layout': '📐 레이아웃',
+    'table': '📋 표',
   };
   return labels[type] || type;
 }

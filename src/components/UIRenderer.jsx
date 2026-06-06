@@ -5,6 +5,7 @@ import StatsCardMini from './StatsCardMini';
 import PropertyCardMini from './PropertyCardMini';
 import ChartWidget from './ChartWidget';
 import LayoutWidget from './LayoutWidget';
+import TableWidget from './TableWidget';
 
 export default function UIRenderer({ ui, onAddToCanvas, compact }) {
   if (!ui || !ui.type) return null;
@@ -23,6 +24,8 @@ export default function UIRenderer({ ui, onAddToCanvas, compact }) {
         return <ChartWidget {...ui.props} />;
       case 'layout':
         return <LayoutWidget columns={ui.props?.columns} children={ui.props?.children} gap={ui.props?.gap} />;
+      case 'table':
+        return <TableWidget title={ui.props?.title} headers={ui.props?.headers} rows={ui.props?.rows} />;
       default:
         return null;
     }

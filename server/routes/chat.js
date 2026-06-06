@@ -289,6 +289,21 @@ const TOOLS = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'render_ui',
+      description: '데이터 조회 결과를 UI 컴포넌트로 표시합니다. 데이터 조회(search_bookings, get_dashboard_summary, execute_sql 등) 후 반드시 이 함수를 호출해야 합니다. 호출하지 않으면 사용자에게 결과가 보이지 않습니다.',
+      parameters: {
+        type: 'object',
+        properties: {
+          type: { type: 'string', enum: ['stats-card', 'booking-list', 'booking-detail', 'property-card', 'chart', 'table', 'layout'], description: 'UI 컴포넌트 타입' },
+          props: { type: 'object', description: '컴포넌트 속성 객체. 각 UI 타입에 맞는 props를 전달하세요.' },
+        },
+        required: ['type', 'props'],
+      },
+    },
+  },
 ];
 
 // ===== Tool Implementations =====
@@ -558,60 +573,33 @@ function executeTool(name, args) {
 
 function getSystemPrompt() {
   const today = new Date().toISOString().slice(0, 10);
-  return `You are a helpful host admin assistant for "Warm Stay" — a property management tool for Korean hosts.
+  return `You are a Korean host admin assistant for "Warm Stay". Today is ${today}.
 
-Today's date is ${today}.
-
-## CRITICAL: NEVER respond with text alone
-
-When you look up data (revenue, bookings, charts, properties, stats), you MUST include "ui" in your JSON response. Text-only responses are FORBIDDEN for data queries.
+## CRITICAL WORKFLOW
+1. User asks a question → use tools to query data
+2. After getting data → call render_ui({type, props}) with the result
+3. Then respond with a JSON message ONLY — no ui field needed (render_ui already handled it)
 
 ## Response format
+{ "message": "한국어 요약" }
+- Always include "message" in Korean
+- Do NOT include "ui" field — render_ui handles that
+- Never output markdown tables or raw data
 
-Always respond with a JSON object:
-{ "message": "한국어 요약", "ui": { "type": "...", "props": { ... } } }
+## UI types for render_ui
+stats-card: { label, value, subtext }
+booking-list: { title, bookings: [{id, guest_name, property_name, check_in, check_out, status, amount}] }
+booking-detail: { booking: {id, guest_name, property_name, check_in, check_out, status, amount} }
+property-card: { name, address, platforms }
+chart: { chartType: "revenue"|"platform"|"occupancy"|"status"|"summary"|"property-ranking", title, data }
+table: { title, headers: [col1, col2, ...], rows: [[val1, val2, ...], ...] }
+layout: { columns: 2, children: [ui objects] }
 
-- "message": always include, in Korean
-- "ui": REQUIRED for ALL data responses. Forbidden to skip.
-- "canvas": include when user asks for 대시보드/캔버스/한눈에
-
-## UI type mapping — follow this exactly
-
-| When user says | Use ui.type |
-|---------------|-------------|
-| "월별 수익 추이", "그래프", "차트로", "그래프로" | chart (chartType: "revenue") |
-| "이번달 수익", "이번달 통계", "총 수익" | layout or stats-card |
-| "예약 목록", "예약 보여줘", "체크인" | booking-list or layout |
-| "숙소별 실적", "예약 많은 숙소" | layout (with chart and stats-card) |
-| "플랫폼별 수익" | chart (chartType: "platform") or layout |
-| "예약 5번" | booking-detail |
-| "숙소 정보" | property-card |
-| 궁금한 거 없음, 인사 | ui: null (ok) |
-
-## Available UI types
-
-{ "type": "stats-card", "props": { "label": "이름", "value": "값", "subtext": "부가설명" } }
-{ "type": "booking-list", "props": { "title": "제목", "bookings": [{id, guest_name, property_name, check_in, check_out, status, amount}] } }
-{ "type": "booking-detail", "props": { "booking": {id, guest_name, property_name, check_in, check_out, status, amount, notes} } }
-{ "type": "property-card", "props": { "name": "숙소명", "address": "주소", "platforms": ["airbnb"] } }
-{ "type": "chart", "props": { "chartType": "revenue"|"platform"|"occupancy"|"status"|"summary"|"property-ranking", "title": "...", "data": [...] } }
-{ "type": "layout", "props": { "columns": 2, "children": [ {type, props}, ... ] } }
-
-## Tool usage
-
-For simple queries: get_dashboard_summary(), search_bookings(), get_booking_stats_by_property(), etc.
-For custom analysis (e.g. "성수 플랫을 플랫폼별로"): get_db_schema() then execute_sql()
-
-## Data modification (only when user asks)
-
-- update_booking_status(booking_id, status)
-- add_property_tag(property_id, tag)
-- remove_property_tag(property_id, tag)
-
-## Rules
-1. Always use tools for REAL data. Never make up numbers.
-2. Always respond in Korean.
-3. Keep message concise.`;
+## TOOLS
+- Simple queries: get_dashboard_summary(), search_bookings(), get_booking_stats_by_property(), get_chart_data(), search_properties(), get_calendar()
+- Complex/custom: get_db_schema() then execute_sql()
+- Data modification: update_booking_status(), add_property_tag(), remove_property_tag()
+- ALWAYS call render_ui() after getting data — this is how users see results`;
 }
 
 // ===== Chat Handler =====
@@ -672,6 +660,7 @@ const toolLabels = {
   add_property_tag: '🏷️ 태그 추가',
   remove_property_tag: '🏷️ 태그 제거',
   update_booking_status: '🔄 상태 변경',
+  render_ui: '🎨 UI 렌더링',
 };
 
 function getToolLabel(name) {
@@ -713,6 +702,7 @@ router.post('/', async (req, res) => {
 
     // Check if AI wants to call tools
     const dataModifyingTools = new Set();
+    let pendingUI = null;
     if (firstChoice.tool_calls && firstChoice.tool_calls.length > 0) {
       // Add the assistant's tool call message to the conversation
       const messageLog = [...fullMessages, firstChoice];
@@ -728,6 +718,16 @@ router.post('/', async (req, res) => {
           if (['add_property_tag', 'remove_property_tag', 'update_booking_status'].includes(name)) {
             dataModifyingTools.add(name);
           }
+          
+          // Intercept render_ui — don't execute, just store and return ok
+          if (name === 'render_ui') {
+            pendingUI = { type: args.type, props: args.props };
+            console.log(`🎨 render_ui stored: ${args.type}`);
+            const resultStr = JSON.stringify({ ok: true, rendered: args.type });
+            messageLog.push({ role: 'tool', tool_call_id: tc.id, content: resultStr });
+            continue;
+          }
+
           const result = executeTool(name, args);
           const resultStr = JSON.stringify(result);
           
@@ -769,6 +769,13 @@ router.post('/', async (req, res) => {
               if (['add_property_tag', 'remove_property_tag', 'update_booking_status'].includes(name)) {
                 dataModifyingTools.add(name);
               }
+              // Intercept render_ui
+              if (name === 'render_ui') {
+                pendingUI = { type: args.type, props: args.props };
+                console.log(`🎨 render_ui (round ${toolRound + 2}): ${args.type}`);
+                currentLog.push({ role: 'tool', tool_call_id: tc.id, content: JSON.stringify({ ok: true, rendered: args.type }) });
+                continue;
+              }
               const result = executeTool(name, args);
               currentLog.push({
                 role: 'tool',
@@ -806,6 +813,11 @@ router.post('/', async (req, res) => {
 
       const result = parseAIResponse(finalContent);
       if (result) {
+        // Merge pendingUI if AI used render_ui tool
+        if (pendingUI) {
+          result.ui = pendingUI;
+          console.log(`🎨 Merged render_ui: ${pendingUI.type}`);
+        }
         console.log('📦 AI response:', result.canvas ? `✅ canvas ${result.canvas.items?.length || 0} items` : 'no canvas');
         if (!result.canvas && isDashboardRequest(userMessages)) {
           result.canvas = buildAutoCanvas(userMessages, result.ui);

@@ -46,6 +46,11 @@ export default function ChatPanel() {
             content += `\n[DATA: ${uiData.props?.chartType || ''} 차트]`;
           } else if (uiData.type === 'property-card') {
             content += `\n[DATA: 숙소 — ${uiData.props?.name || ''}]`;
+          } else if (uiData.type === 'layout') {
+            const children = uiData.props?.children || [];
+            content += `\n[DATA: 레이아웃 ${children.length}개]`;
+          } else if (uiData.type === 'table') {
+            content += `\n[DATA: 표 ${uiData.props?.rows?.length || 0}행]`;
           }
         }
         // Also note if canvas was added
