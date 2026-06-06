@@ -59,6 +59,29 @@ function normalizeData(data) {
     if (data.properties && Array.isArray(data.properties)) {
       return data.properties;
     }
+    // {labels: [...], ...series arrays} — generic labeled series format
+    // e.g. {labels: ["1월","2월"], revenue: [100,200], booking_count: [5,6]}
+    if (data.labels && Array.isArray(data.labels)) {
+      // Find all numeric array properties
+      const series = Object.entries(data).filter(([k, v]) =>
+        k !== 'labels' && Array.isArray(v) && v.length === data.labels.length
+      );
+      if (series.length >= 1) {
+        return data.labels.map((label, i) => {
+          const obj = { label };
+          series.forEach(([k, v]) => { obj[k] = v[i]; });
+          return obj;
+        });
+      }
+    }
+    // {columns: [...], rows: [[...], ...]} — SQL result format
+    if (data.columns && Array.isArray(data.columns) && data.rows && Array.isArray(data.rows)) {
+      return data.rows.map(row => {
+        const obj = {};
+        data.columns.forEach((col, i) => { obj[col] = row[i]; });
+        return obj;
+      });
+    }
     // Single object with numeric values → wrap in array
     const numericKeys = Object.entries(data).filter(([k, v]) => typeof v === 'number' && !k.startsWith('_'));
     if (numericKeys.length >= 2) {
@@ -78,7 +101,9 @@ function formatWon(amount) {
 // --- Revenue Line Chart ---
 function RevenueChart({ data }) {
   const chartData = normalizeData(data).map(d => ({
-    month: d.month ? `${String(d.month).replace(/^0/, '')}월` : (d.label || d.day || ''),
+    month: d.month 
+      ? `${parseInt(d.month.toString().replace(/^\d{4}-/, '')).toString()}월`
+      : (d.label || d.day || ''),
     revenue: d.revenue || d.daily_revenue || d.total_revenue || 0,
     bookings: d.bookings || d.booking_count || 0,
   }));
