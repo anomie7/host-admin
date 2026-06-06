@@ -239,6 +239,7 @@ function autoQuery(userMessages) {
     const wantsRevenue = /수익|매출|수입|돈|금액/.test(text);
     const wantsBookings = /예약|체크인|투숙|게스트/.test(text);
     const wantsRanking = /많은|TOP|순위|많이|가장|최고|인기/.test(text);
+    const wantsPlatform = /플랫폼|플랫|에어비앤비|airbnb|부킹|booking|리브애니웨어/.test(text);
     const wantsOccupancy = /점유율|빈방|비율/.test(text);
 
     const timeFilter = targetMonth
@@ -257,6 +258,34 @@ function autoQuery(userMessages) {
       return {
         ui: { type: 'chart', props: { chartType: 'property-ranking', title: `${monthLabel} 숙소별 통계`, sortBy: wantsRevenue ? 'revenue' : 'count', data: rows } },
         sql,
+        count: rows.length,
+      };
+    }
+
+    if (wantsPlatform && !wantsRanking) {
+      const sql = `SELECT platform, COUNT(*) as booking_count, SUM(amount) as total_revenue, AVG(amount) as avg_rate
+        FROM bookings WHERE status != 'cancelled' AND ${timeFilter}
+        GROUP BY platform ORDER BY total_revenue DESC`;
+      const rows = db.prepare(sql).all();
+      // Also get property-specific breakdown if property name mentioned
+      let propFilter = '';
+      const propMatch = text.match(/(\S+)\s*(?:숙소|플랫|하우스|스테이|레지던스|스튜디오|펜션|게스트하우스)/);
+      if (propMatch) {
+        const propName = propMatch[1].trim();
+        const propSql = `SELECT p.name as property_name FROM properties p WHERE p.name LIKE '%${propName}%' LIMIT 1`;
+        const propRow = db.prepare(propSql).get();
+        if (propRow) {
+          propFilter = ` AND b.property_id = (SELECT id FROM properties WHERE name = '${propRow.property_name}')`;
+        }
+      }
+      const detailSql = propFilter ? `SELECT platform, COUNT(*) as booking_count, SUM(b.amount) as revenue
+        FROM bookings b WHERE b.status != 'cancelled' AND ${timeFilter}${propFilter}
+        GROUP BY platform ORDER BY revenue DESC` : null;
+      const detailRows = detailSql ? db.prepare(detailSql).all() : [];
+      const uiData = detailRows.length > 0 ? detailRows : rows;
+      return {
+        ui: { type: 'chart', props: { chartType: 'platform', title: `${monthLabel} 플랫폼별 수익`, data: uiData } },
+        sql: detailSql || sql,
         count: rows.length,
       };
     }
@@ -1216,8 +1245,13 @@ class Orchestrator {
       if (verdict === 'pass') break;
 
       if (this.state.attempt >= this.state.maxAttempts) {
-        console.log(`⚠️ Orchestrator: max attempts (${this.state.maxAttempts}) reached, falling back`);
+        console.log(`⚠️ Orchestrator: max attempts (${this.state.maxAttempts}) reached, using last data tool`);
         await this.phase('reporting');
+        // Even if Verifier rejected, still use the data we have
+        if (this.state.lastDataTool) {
+          const autoUI = autoGenerateUI(this.state.lastDataTool);
+          if (autoUI) this.state.pendingUI = autoUI;
+        }
         await this.report();
         return;
       }
@@ -1410,14 +1444,37 @@ class Orchestrator {
       return 'retry';
     }
 
-    // Check 2: Empty data?
-    const hasData = pendingUI.props && (
-      (pendingUI.type === 'booking-list' && pendingUI.props.bookings?.length > 0) ||
-      (pendingUI.type === 'chart' && pendingUI.props.data?.length > 0) ||
-      (pendingUI.type === 'table' && pendingUI.props.rows?.length > 0) ||
-      (pendingUI.type === 'stats-card' && pendingUI.props.value) ||
-      (pendingUI.type === 'html' && pendingUI.props.content)
-    );
+    // Check 2: Has data? Be flexible about data formats
+    let hasData = false;
+    if (pendingUI.props) {
+      const p = pendingUI.props;
+      switch (pendingUI.type) {
+        case 'booking-list':
+          hasData = Array.isArray(p.bookings) && p.bookings.length > 0;
+          break;
+        case 'chart':
+          // Chart data can be array OR object (nested format)
+          if (Array.isArray(p.data) && p.data.length > 0) {
+            hasData = true;
+          } else if (p.data && typeof p.data === 'object' && Object.keys(p.data).length > 0) {
+            hasData = true; // object format like {platforms: [...], revenues: [...]}
+          } else if (p.chartType && p.title) {
+            hasData = true; // AI sometimes puts summary in chartType
+          }
+          break;
+        case 'table':
+          hasData = Array.isArray(p.rows) && p.rows.length > 0;
+          break;
+        case 'stats-card':
+          hasData = !!p.value;
+          break;
+        case 'html':
+          hasData = !!p.content;
+          break;
+        default:
+          hasData = Object.keys(p).length > 0;
+      }
+    }
     if (!hasData) {
       this.state.verdict = { verdict: 'retry', reason: 'UI에 데이터가 없습니다. 데이터를 포함하여 다시 실행하세요.' };
       this.send('verdict', this.state.verdict);
