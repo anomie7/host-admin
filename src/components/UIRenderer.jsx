@@ -3,6 +3,7 @@ import BookingListMini from './BookingListMini';
 import BookingDetailMini from './BookingDetailMini';
 import StatsCardMini from './StatsCardMini';
 import PropertyCardMini from './PropertyCardMini';
+import ChartWidget from './ChartWidget';
 
 export default function UIRenderer({ ui, onAddToCanvas, compact }) {
   if (!ui || !ui.type) return null;
@@ -17,6 +18,8 @@ export default function UIRenderer({ ui, onAddToCanvas, compact }) {
         return <StatsCardMini {...ui.props} />;
       case 'property-card':
         return <PropertyCardMini {...ui.props} />;
+      case 'chart':
+        return <ChartWidget {...ui.props} />;
       default:
         return null;
     }

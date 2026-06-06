@@ -136,6 +136,68 @@ app.get('/api/dashboard/summary', (req, res) => {
   });
 });
 
+// Dashboard charts endpoint — for Recharts
+app.get('/api/dashboard/charts', (req, res) => {
+  const db = getDb();
+  const yearRow = db.prepare("SELECT strftime('%Y', MAX(check_in)) as year FROM bookings").get();
+  const thisYear = (yearRow && yearRow.year) || new Date().getFullYear().toString();
+
+  // Monthly revenue (non-cancelled)
+  const monthlyRevenue = db.prepare(`
+    SELECT strftime('%m', check_in) as month,
+           SUM(amount) as revenue,
+           COUNT(*) as bookings
+    FROM bookings
+    WHERE strftime('%Y', check_in) = ? AND status != 'cancelled'
+    GROUP BY strftime('%m', check_in)
+    ORDER BY month
+  `).all(thisYear);
+
+  // Platform revenue
+  const platformRevenue = db.prepare(`
+    SELECT platform, SUM(amount) as revenue, COUNT(*) as bookings
+    FROM bookings
+    WHERE strftime('%Y', check_in) = ? AND status != 'cancelled'
+    GROUP BY platform
+  `).all(thisYear);
+
+  // Monthly occupancy (distinct check-in days / 30)
+  const monthlyOccupancy = db.prepare(`
+    SELECT strftime('%m', check_in) as month,
+           COUNT(DISTINCT check_in) as occupied_days,
+           COUNT(*) as bookings
+    FROM bookings
+    WHERE strftime('%Y', check_in) = ? AND status != 'cancelled'
+    GROUP BY strftime('%m', check_in)
+    ORDER BY month
+  `).all(thisYear);
+
+  // Status distribution
+  const statusDistribution = db.prepare(`
+    SELECT status, COUNT(*) as count
+    FROM bookings
+    WHERE strftime('%Y', check_in) = ?
+    GROUP BY status
+  `).all(thisYear);
+
+  // Monthly platform breakdown
+  const monthlyPlatform = db.prepare(`
+    SELECT strftime('%m', check_in) as month, platform, SUM(amount) as revenue
+    FROM bookings
+    WHERE strftime('%Y', check_in) = ? AND status != 'cancelled'
+    GROUP BY strftime('%m', check_in), platform
+    ORDER BY month, platform
+  `).all(thisYear);
+
+  res.json({
+    monthlyRevenue,
+    platformRevenue,
+    monthlyOccupancy,
+    statusDistribution,
+    monthlyPlatform,
+  });
+});
+
 // CSV export
 app.get('/api/bookings/export/csv', (req, res) => {
   const { month, year } = req.query;

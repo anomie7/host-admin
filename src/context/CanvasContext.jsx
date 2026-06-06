@@ -1,4 +1,17 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
+
+const STORAGE_KEY = 'canvas_items';
+
+function loadCanvas() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : { items: [], title: '' };
+  } catch { return { items: [], title: '' }; }
+}
+
+function saveCanvas(items, title) {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ items, title })); } catch {}
+}
 
 const CanvasContext = createContext();
 
@@ -7,11 +20,12 @@ export function useCanvas() {
 }
 
 export function CanvasProvider({ children }) {
-  const [items, setItems] = useState([]);
-  const [canvasTitle, setCanvasTitle] = useState('');
+  const [items, setItems] = useState(() => loadCanvas().items);
+  const [canvasTitle, setCanvasTitle] = useState(() => loadCanvas().title);
+
+  useEffect(() => { saveCanvas(items, canvasTitle); }, [items, canvasTitle]);
 
   const addItem = useCallback((item) => {
-    // item: { type, props, id }
     setItems(prev => [...prev, { ...item, id: item.id || `c${Date.now()}` }]);
   }, []);
 
@@ -20,6 +34,7 @@ export function CanvasProvider({ children }) {
     setItems(prev => {
       const existingIds = new Set(prev.map(i => i.id));
       const toAdd = newItems.filter(i => !existingIds.has(i.id));
+      if (toAdd.length === 0) return prev;
       return [...prev, ...toAdd];
     });
   }, []);

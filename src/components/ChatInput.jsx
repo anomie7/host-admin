@@ -1,13 +1,11 @@
-import React, { useState } from 'react';
+import React from 'react';
 
-export default function ChatInput({ onSend, disabled }) {
-  const [text, setText] = useState('');
-
+export default function ChatInput({ text, onTextChange, onSend, disabled }) {
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!text.trim() || disabled) return;
     onSend(text.trim());
-    setText('');
+    onTextChange('');
   };
 
   const handleKeyDown = (e) => {
@@ -22,7 +20,7 @@ export default function ChatInput({ onSend, disabled }) {
       <textarea
         className="chat-input"
         value={text}
-        onChange={e => setText(e.target.value)}
+        onChange={e => onTextChange(e.target.value)}
         onKeyDown={handleKeyDown}
         placeholder="메시지를 입력하세요..."
         rows={1}
