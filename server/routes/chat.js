@@ -133,6 +133,74 @@ function buildAutoCanvas(messages) {
   return { title, items };
 }
 
+// Auto-generate UI from last data tool result when AI forgets render_ui
+function autoGenerateUI(lastDataTool) {
+  if (!lastDataTool) return null;
+  const { name, result } = lastDataTool;
+  if (!result) return null;
+
+  try {
+    switch (name) {
+      case 'search_bookings': {
+        const rows = Array.isArray(result) ? result : [];
+        // Sort by most recent check_in
+        const bookings = rows.sort((a, b) => (b.check_in || '').localeCompare(a.check_in || ''));
+        return {
+          type: 'booking-list',
+          props: { title: '예약 목록', bookings: bookings.slice(0, 20) },
+        };
+      }
+      case 'get_dashboard_summary': {
+        if (result.month && result.today) {
+          return {
+            type: 'layout',
+            props: {
+              columns: 2,
+              children: [
+                { type: 'stats-card', props: { label: '이번달 수익', value: `₩${(result.month.totalRevenue || 0).toLocaleString()}`, subtext: `${result.month.totalBookings || 0}건 예약` } },
+                { type: 'stats-card', props: { label: '점유율', value: `${result.month.occupancyRate || 0}%`, subtext: `평균 ₩${(result.month.avgRate || 0).toLocaleString()}` } },
+              ],
+            },
+          };
+        }
+        return null;
+      }
+      case 'get_booking_stats_by_property': {
+        const rows = Array.isArray(result) ? result : [];
+        return {
+          type: 'chart',
+          props: { chartType: 'property-ranking', title: '숙소별 통계', sortBy: 'booking_count', data: rows.slice(0, 5) },
+        };
+      }
+      case 'search_properties': {
+        const props = Array.isArray(result) && result.length > 0 ? result[0] : null;
+        if (props) {
+          return { type: 'property-card', props: { name: props.name, address: props.address, platforms: props.platforms } };
+        }
+        return null;
+      }
+      case 'get_calendar': {
+        return { type: 'stats-card', props: { label: '캘린더', value: `${Object.keys(result || {}).length}일`, subtext: '예약이 있는 날짜' } };
+      }
+      case 'execute_sql': {
+        const rows2 = Array.isArray(result) ? result : Array.isArray(result?.rows) ? result.rows : [];
+        if (rows2.length > 0) {
+          const headers = Object.keys(rows2[0]);
+          return {
+            type: 'table',
+            props: { title: '조회 결과', headers, rows: rows2.slice(0, 15).map(r => headers.map(h => String(r[h] ?? ''))) },
+          };
+        }
+        return null;
+      }
+      default:
+        return null;
+    }
+  } catch {
+    return null;
+  }
+}
+
 // ===== Tool Definitions =====
 
 const TOOLS = [
@@ -703,6 +771,7 @@ router.post('/', async (req, res) => {
     // Check if AI wants to call tools
     const dataModifyingTools = new Set();
     let pendingUI = null;
+    let lastDataTool = null; // Track last data query tool for auto-fallback
     if (firstChoice.tool_calls && firstChoice.tool_calls.length > 0) {
       // Add the assistant's tool call message to the conversation
       const messageLog = [...fullMessages, firstChoice];
@@ -730,6 +799,10 @@ router.post('/', async (req, res) => {
 
           const result = executeTool(name, args);
           const resultStr = JSON.stringify(result);
+          // Track last data query tool for auto-fallback
+          if (!['get_db_schema', 'get_chart_data'].includes(name)) {
+            lastDataTool = { name, result };
+          }
           
           messageLog.push({
             role: 'tool',
@@ -777,6 +850,10 @@ router.post('/', async (req, res) => {
                 continue;
               }
               const result = executeTool(name, args);
+              // Track last data query tool for auto-fallback
+              if (!['get_db_schema', 'get_chart_data', 'render_ui'].includes(name)) {
+                lastDataTool = { name, result };
+              }
               currentLog.push({
                 role: 'tool',
                 tool_call_id: tc.id,
@@ -817,6 +894,13 @@ router.post('/', async (req, res) => {
         if (pendingUI) {
           result.ui = pendingUI;
           console.log(`🎨 Merged render_ui: ${pendingUI.type}`);
+        } else if (lastDataTool && !result.ui) {
+          // AI forgot render_ui — auto-generate UI from last data query
+          const autoUI = autoGenerateUI(lastDataTool);
+          if (autoUI) {
+            result.ui = autoUI;
+            console.log(`🔄 Auto-generated UI from ${lastDataTool.name}: ${autoUI.type}`);
+          }
         }
         console.log('📦 AI response:', result.canvas ? `✅ canvas ${result.canvas.items?.length || 0} items` : 'no canvas');
         if (!result.canvas && isDashboardRequest(userMessages)) {

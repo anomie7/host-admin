@@ -1,17 +1,87 @@
-import React from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import ChatPanel from './ChatPanel';
 
+const STORAGE_KEY = 'sidepanel_width';
+const MIN_WIDTH = 300;
+const MAX_WIDTH = 800;
+
+function loadWidth() {
+  try {
+    const w = localStorage.getItem(STORAGE_KEY);
+    return w ? Math.min(Math.max(parseInt(w), MIN_WIDTH), MAX_WIDTH) : null;
+  } catch { return null; }
+}
+
 export default function SidePanel({ open, onClose, onToggle, isMobile }) {
+  const [panelWidth, setPanelWidth] = useState(loadWidth);
+  const resizing = useRef(false);
+  const startX = useRef(0);
+  const startWidth = useRef(0);
+  const panelRef = useRef(null);
+
+  // Apply custom width to panel
+  useEffect(() => {
+    if (panelRef.current && panelWidth) {
+      panelRef.current.style.setProperty('--panel-width', `${panelWidth}px`);
+    }
+  }, [panelWidth]);
+
+  const handleMouseDown = useCallback((e) => {
+    e.preventDefault();
+    resizing.current = true;
+    startX.current = e.clientX;
+    const currentW = panelRef.current?.offsetWidth || 440;
+    startWidth.current = currentW;
+
+    const handleMouseMove = (ev) => {
+      if (!resizing.current) return;
+      const diff = startX.current - ev.clientX;
+      const newWidth = Math.min(Math.max(startWidth.current + diff, MIN_WIDTH), MAX_WIDTH);
+      if (panelRef.current) {
+        panelRef.current.style.width = `${newWidth}px`;
+        panelRef.current.style.flexShrink = '0';
+      }
+    };
+
+    const handleMouseUp = () => {
+      if (!resizing.current) return;
+      resizing.current = false;
+      const finalWidth = panelRef.current?.offsetWidth || 440;
+      setPanelWidth(finalWidth);
+      try { localStorage.setItem(STORAGE_KEY, String(finalWidth)); } catch {}
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  }, []);
+
   const panelClass = `side-panel${open ? ' side-panel--open' : ''}`;
 
   return (
     <>
       {!isMobile && (
         <div className="side-panel-collapse" onClick={onToggle} title={open ? '접기' : '펼치기'}>
-          <span style={{ transform: open ? 'rotate(0deg)' : 'rotate(180deg)', display: 'inline-block', transition: 'transform 200ms ease' }}>▶</span>
+          {/* Resize handle (small vertical strip within collapse) */}
+          <div
+            className="side-panel-resize"
+            onMouseDown={handleMouseDown}
+            title="드래그하여 너비 조절"
+          />
+          <span style={{ transform: open ? 'rotate(0deg)' : 'rotate(180deg)', display: 'inline-block', transition: 'transform 200ms ease', pointerEvents: 'none' }}>▶</span>
         </div>
       )}
-      <aside className={panelClass} aria-label="AI 어시스턴트">
+      <aside
+        ref={panelRef}
+        className={panelClass}
+        aria-label="AI 어시스턴트"
+        style={panelWidth && open ? { width: panelWidth, minWidth: MIN_WIDTH } : undefined}
+      >
         <div className="side-panel-header">
           <span style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 600 }}>💬 AI 어시스턴트</span>
           {isMobile && (
