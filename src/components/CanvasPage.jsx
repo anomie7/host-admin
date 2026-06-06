@@ -191,6 +191,7 @@ function componentLabel(type) {
     'chart': '📈 차트',
     'layout': '📐 레이아웃',
     'table': '📋 표',
+    'html': '🔧 커스텀',
   };
   return labels[type] || type;
 }

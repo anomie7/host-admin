@@ -135,63 +135,49 @@ function buildAutoCanvas(messages) {
 
 // Auto-generate UI from last data tool result when AI forgets render_ui
 function autoGenerateUI(lastDataTool) {
-  if (!lastDataTool) return null;
+  if (!lastDataTool || !lastDataTool.result) return null;
   const { name, result } = lastDataTool;
-  if (!result) return null;
 
   try {
     switch (name) {
-      case 'search_bookings': {
-        const rows = Array.isArray(result) ? result : [];
-        // Sort by most recent check_in
-        const bookings = rows.sort((a, b) => (b.check_in || '').localeCompare(a.check_in || ''));
-        return {
-          type: 'booking-list',
-          props: { title: '예약 목록', bookings: bookings.slice(0, 20) },
-        };
-      }
-      case 'get_dashboard_summary': {
-        if (result.month && result.today) {
-          return {
-            type: 'layout',
-            props: {
-              columns: 2,
-              children: [
-                { type: 'stats-card', props: { label: '이번달 수익', value: `₩${(result.month.totalRevenue || 0).toLocaleString()}`, subtext: `${result.month.totalBookings || 0}건 예약` } },
-                { type: 'stats-card', props: { label: '점유율', value: `${result.month.occupancyRate || 0}%`, subtext: `평균 ₩${(result.month.avgRate || 0).toLocaleString()}` } },
-              ],
-            },
-          };
-        }
-        return null;
-      }
-      case 'get_booking_stats_by_property': {
-        const rows = Array.isArray(result) ? result : [];
-        return {
-          type: 'chart',
-          props: { chartType: 'property-ranking', title: '숙소별 통계', sortBy: 'booking_count', data: rows.slice(0, 5) },
-        };
-      }
-      case 'search_properties': {
-        const props = Array.isArray(result) && result.length > 0 ? result[0] : null;
-        if (props) {
-          return { type: 'property-card', props: { name: props.name, address: props.address, platforms: props.platforms } };
-        }
-        return null;
-      }
-      case 'get_calendar': {
-        return { type: 'stats-card', props: { label: '캘린더', value: `${Object.keys(result || {}).length}일`, subtext: '예약이 있는 날짜' } };
-      }
       case 'execute_sql': {
-        const rows2 = Array.isArray(result) ? result : Array.isArray(result?.rows) ? result.rows : [];
-        if (rows2.length > 0) {
-          const headers = Object.keys(rows2[0]);
+        const { columns, rows } = result || {};
+        if (!columns || !rows || rows.length === 0) return null;
+
+        // Check if result looks like booking data (has guest_name, check_in etc.)
+        const colSet = new Set(columns.map(c => c.toLowerCase()));
+        if (colSet.has('guest_name') && colSet.has('check_in')) {
+          const bookings = rows.map(r => {
+            const obj = {};
+            columns.forEach((c, i) => { obj[c] = r[i]; });
+            return obj;
+          });
           return {
-            type: 'table',
-            props: { title: '조회 결과', headers, rows: rows2.slice(0, 15).map(r => headers.map(h => String(r[h] ?? ''))) },
+            type: 'booking-list',
+            props: { title: '예약 목록', bookings: bookings.slice(0, 20) },
           };
         }
-        return null;
+
+        // Check if it's aggregate data (has count, revenue, etc.)
+        if (colSet.has('booking_count') || colSet.has('total_revenue') || (colSet.has('count') && columns.length <= 3)) {
+          return {
+            type: 'chart',
+            props: { chartType: 'property-ranking', title: '조회 결과', sortBy: 'revenue', data: rows.map(r => {
+              const obj = {};
+              columns.forEach((c, i) => { obj[c] = r[i]; });
+              return obj;
+            }).slice(0, 10) },
+          };
+        }
+
+        // Default: table view
+        return {
+          type: 'table',
+          props: { title: '조회 결과', headers: columns, rows: rows.slice(0, 15) },
+        };
+      }
+      case 'get_db_schema': {
+        return null; // Schema info, no UI needed
       }
       default:
         return null;
@@ -201,94 +187,137 @@ function autoGenerateUI(lastDataTool) {
   }
 }
 
+// Execute a plan array from AI (string steps like "execute_sql(...)" or "render_ui(type, props)")
+function executePlanStep(step) {
+  // Parse: "tool_name(arg1, arg2, ...)" or "tool_name({json args})"
+  const match = step.trim().match(/^(\w+)\s*\(([\s\S]*)\)\s*$/);
+  if (!match) return { error: `Cannot parse step: ${step}` };
+
+  const name = match[1];
+  let argsStr = match[2].trim();
+
+  // Try JSON first: if args look like JSON object or array
+  let args = {};
+  if (argsStr.startsWith('{') || argsStr.startsWith('[')) {
+    try { args = JSON.parse(argsStr); } catch {
+      args = {};
+    }
+  } else if (argsStr) {
+    // Positional args: try to parse as JSON or keep as single string arg
+    try { args = { sql: JSON.parse(argsStr) }; } catch {
+      args = { sql: argsStr };
+    }
+  }
+
+  // Skip render_ui — handled by caller
+  if (name === 'render_ui') {
+    return { _render_ui: true, type: args.type, props: args.props };
+  }
+
+  return executeTool(name, args);
+}
+
+function parsePlanSteps(plan) {
+  if (!Array.isArray(plan)) return [];
+  return plan.map(step => (typeof step === 'string' ? step : JSON.stringify(step)));
+}
+
+// Auto-detect user intent and query data when AI fails to use tools
+function autoQuery(userMessages) {
+  const text = userMessages.map(m => m.content || '').join(' ');
+  const db = getDb();
+  const today = new Date().toISOString().slice(0, 10);
+  const thisYear = today.slice(0, 4);
+  const thisMonth = today.slice(5, 7);
+
+  try {
+    // Detect month mentions
+    const monthMatch = text.match(/(\d{1,2})\s*월/);
+    const targetMonth = monthMatch ? String(parseInt(monthMatch[1])).padStart(2, '0') : null;
+
+    // Detect intent keywords
+    const wantsRevenue = /수익|매출|수입|돈|금액/.test(text);
+    const wantsBookings = /예약|체크인|투숙|게스트/.test(text);
+    const wantsRanking = /많은|TOP|순위|많이|가장|최고|인기/.test(text);
+    const wantsOccupancy = /점유율|빈방|비율/.test(text);
+
+    const timeFilter = targetMonth
+      ? `strftime('%m', check_in) = '${targetMonth}' AND strftime('%Y', check_in) = '${thisYear}'`
+      : `strftime('%Y', check_in) = '${thisYear}'`;
+    const monthLabel = targetMonth ? `${parseInt(targetMonth)}월` : '올해';
+
+    if (wantsRanking && (wantsRevenue || wantsBookings)) {
+      const yearFilter = `strftime('%Y', b.check_in) = '${thisYear}'`;
+      const monthFilter = targetMonth ? ` AND strftime('%m', b.check_in) = '${targetMonth}'` : '';
+      const sql = `SELECT p.id, p.name, COUNT(*) as booking_count, SUM(b.amount) as total_revenue, AVG(b.amount) as avg_rate
+        FROM bookings b JOIN properties p ON b.property_id = p.id
+        WHERE b.status != 'cancelled' AND ${yearFilter}${monthFilter}
+        GROUP BY b.property_id ORDER BY ${wantsRevenue ? 'total_revenue' : 'booking_count'} DESC LIMIT 5`;
+      const rows = db.prepare(sql).all();
+      return {
+        ui: { type: 'chart', props: { chartType: 'property-ranking', title: `${monthLabel} 숙소별 통계`, sortBy: wantsRevenue ? 'revenue' : 'count', data: rows } },
+        sql,
+        count: rows.length,
+      };
+    }
+
+    if (wantsRevenue && !wantsRanking) {
+      const sql = `SELECT SUM(amount) as total, COUNT(*) as bookings, AVG(amount) as avg_rate
+        FROM bookings WHERE status != 'cancelled' AND ${timeFilter}`;
+      const row = db.prepare(sql).get();
+      return {
+        ui: { type: 'stats-card', props: { label: `${monthLabel} 수익`, value: `₩${(row.total || 0).toLocaleString()}`, subtext: `${row.bookings || 0}건 예약, 평균 ₩${Math.round(row.avg_rate || 0).toLocaleString()}` } },
+        sql,
+        count: row.bookings || 0,
+      };
+    }
+
+    if (targetMonth && wantsBookings) {
+      const sql = `SELECT b.*, p.name AS property_name FROM bookings b JOIN properties p ON b.property_id = p.id
+        WHERE strftime('%m', b.check_in) = '${targetMonth}' AND strftime('%Y', b.check_in) = '${thisYear}'
+        ORDER BY b.check_in ASC LIMIT 20`;
+      const rows = db.prepare(sql).all();
+      if (rows.length > 0) {
+        return {
+          ui: { type: 'booking-list', props: { title: `${parseInt(targetMonth)}월 예약 목록`, bookings: rows } },
+          sql,
+          count: rows.length,
+        };
+      }
+    }
+
+    if (wantsBookings) {
+      const sql = `SELECT b.*, p.name AS property_name FROM bookings b JOIN properties p ON b.property_id = p.id
+        ORDER BY b.check_in ASC LIMIT 20`;
+      const rows = db.prepare(sql).all();
+      if (rows.length > 0) {
+        return {
+          ui: { type: 'booking-list', props: { title: '예약 목록', bookings: rows } },
+          sql,
+          count: rows.length,
+        };
+      }
+    }
+
+    // Default: summary stats
+    {
+      const sql = `SELECT COUNT(*) as total, SUM(amount) as revenue FROM bookings WHERE strftime('%Y', check_in) = '${thisYear}' AND status != 'cancelled'`;
+      const row = db.prepare(sql).get();
+      return {
+        ui: { type: 'stats-card', props: { label: '통계', value: `${row.total || 0}건`, subtext: `총 수익 ₩${(row.revenue || 0).toLocaleString()}` } },
+        sql,
+        count: row.total || 0,
+      };
+    }
+  } catch (err) {
+    console.error('autoQuery error:', err);
+    return null;
+  }
+}
+
 // ===== Tool Definitions =====
 
 const TOOLS = [
-  {
-    type: 'function',
-    function: {
-      name: 'search_bookings',
-      description: '예약 정보를 검색합니다. 날짜 범위, 게스트명, 숙소명, 상태 등으로 필터링 가능합니다.',
-      parameters: {
-        type: 'object',
-        properties: {
-          id: { type: 'number', description: '예약 ID로 직접 조회 (단건)' },
-          date_from: { type: 'string', description: '검색 시작일 (YYYY-MM-DD). 생략시 전체 기간' },
-          date_to: { type: 'string', description: '검색 종료일 (YYYY-MM-DD). 생략시 전체 기간' },
-          guest_name: { type: 'string', description: '게스트명으로 검색 (부분일치)' },
-          property_name: { type: 'string', description: '숙소명으로 검색 (부분일치)' },
-          status: { type: 'string', enum: ['upcoming', 'checked_in', 'checked_out', 'cancelled'], description: '예약 상태로 필터링' },
-          platform: { type: 'string', enum: ['airbnb', 'booking', 'liveanywhere'], description: '플랫폼으로 필터링' },
-          limit: { type: 'number', description: '최대 결과 수 (기본 20)' },
-        },
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'get_dashboard_summary',
-      description: '대시보드 요약 정보를 가져옵니다. 오늘의 체크인/체크아웃, 이번달 수익/예약건수/점유율, 정산 예정 내역을 반환합니다.',
-      parameters: { type: 'object', properties: {} },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'search_properties',
-      description: '숙소 정보를 검색합니다.',
-      parameters: {
-        type: 'object',
-        properties: {
-          query: { type: 'string', description: '숙소명 또는 주소로 검색 (부분일치)' },
-          id: { type: 'number', description: '숙소 ID로 직접 조회' },
-        },
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'get_calendar',
-      description: '특정 월의 캘린더 데이터를 가져옵니다. 날짜별로 그룹화된 예약 목록을 반환합니다.',
-      parameters: {
-        type: 'object',
-        properties: {
-          month: { type: 'number', description: '월 (1-12)' },
-          year: { type: 'number', description: '연도 (예: 2026)' },
-        },
-        required: ['month', 'year'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'get_chart_data',
-      description: '대시보드 차트 데이터를 가져옵니다. 월별 수익, 플랫폼별 수익, 월별 점유율, 상태 분포를 반환합니다. (숙소별 통계는 get_booking_stats_by_property를 사용하세요)',
-      parameters: {
-        type: 'object',
-        properties: {},
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'get_booking_stats_by_property',
-      description: '숙소별 예약 통계를 반환합니다. 예약 건수 순으로 정렬되어 있어 "예약이 가장 많은 숙소", "수익이 가장 높은 숙소" 등을 알 수 있습니다. 특정 숙소 하나만 조회할 때는 property_id를 사용하세요. (참고: group_by 파라미터는 없습니다 — 플랫폼별 분석은 search_bookings()를 써야 함)',
-      parameters: {
-        type: 'object',
-        properties: {
-          property_id: { type: 'number', description: '특정 숙소 ID로 필터링 (단건 조회). 플랫폼별/월별 등 세부 분석은 안 되고 전체 합계만 반환합니다.' },
-          sort_by: { type: 'string', enum: ['booking_count', 'revenue'], description: '정렬 기준 (기본: booking_count)' },
-          year: { type: 'number', description: '연도 필터 (기본: 전체)' },
-          limit: { type: 'number', description: '최대 결과 수 (기본: 전체)' },
-          exclude_cancelled: { type: 'boolean', description: '취소된 예약 제외 여부 (기본: true)' },
-        },
-      },
-    },
-  },
   {
     type: 'function',
     function: {
@@ -361,11 +390,11 @@ const TOOLS = [
     type: 'function',
     function: {
       name: 'render_ui',
-      description: '데이터 조회 결과를 UI 컴포넌트로 표시합니다. 데이터 조회(search_bookings, get_dashboard_summary, execute_sql 등) 후 반드시 이 함수를 호출해야 합니다. 호출하지 않으면 사용자에게 결과가 보이지 않습니다.',
+      description: '데이터 조회 결과를 UI 컴포넌트로 표시합니다. execute_sql()로 데이터를 조회한 후 반드시 이 함수를 호출해야 합니다. 호출하지 않으면 사용자에게 결과가 보이지 않습니다.',
       parameters: {
         type: 'object',
         properties: {
-          type: { type: 'string', enum: ['stats-card', 'booking-list', 'booking-detail', 'property-card', 'chart', 'table', 'layout'], description: 'UI 컴포넌트 타입' },
+          type: { type: 'string', enum: ['stats-card', 'booking-list', 'booking-detail', 'property-card', 'chart', 'table', 'layout', 'html'], description: 'UI 컴포넌트 타입' },
           props: { type: 'object', description: '컴포넌트 속성 객체. 각 UI 타입에 맞는 props를 전달하세요.' },
         },
         required: ['type', 'props'],
@@ -578,15 +607,17 @@ function executeTool(name, args) {
         const params = args.params || [];
         const stmt = db.prepare(trimmed);
         const rows = stmt.all(...params);
-        // Limit results to prevent huge responses
+        // Always return {columns, rows} format
+        const columns = rows.length > 0 ? Object.keys(rows[0]) : [];
         if (rows.length > 200) {
           return {
+            columns,
             truncated: true,
             total_rows: rows.length,
-            rows: rows.slice(0, 200),
+            rows: rows.slice(0, 200).map(r => columns.map(c => r[c])),
           };
         }
-        return rows;
+        return { columns, rows: rows.map(r => columns.map(c => r[c])) };
       } catch (err) {
         return { error: err.message };
       }
@@ -643,31 +674,47 @@ function getSystemPrompt() {
   const today = new Date().toISOString().slice(0, 10);
   return `You are a Korean host admin assistant for "Warm Stay". Today is ${today}.
 
-## CRITICAL WORKFLOW
-1. User asks a question → use tools to query data
-2. After getting data → call render_ui({type, props}) with the result
-3. Then respond with a JSON message ONLY — no ui field needed (render_ui already handled it)
+## CRITICAL WORKFLOW (YOU MUST FOLLOW THIS EXACTLY)
+1. Analyze what data the user needs
+2. First output a JSON with your plan — ALWAYS include "plan" and "message"
+3. Then IMMEDIATELY call the first tool in your plan
+4. ALWAYS finish by calling render_ui() — this is MANDATORY
+5. Finally output { "message": "한국어 요약" }
+
+## ⚠️ NEVER ANSWER FROM MEMORY
+You do NOT know the real booking data. Even if you think you know the answer,
+you MUST look up actual data using tools. NEVER make up numbers.
 
 ## Response format
+FIRST response (with plan + first tool call):
+{ "plan": ["execute_sql(\"SELECT...\")", "render_ui(table, ...)"], "message": "한국어 설명" }
+Then call execute_sql() as your first tool.
+
+FINAL response (after all tools done):
 { "message": "한국어 요약" }
-- Always include "message" in Korean
-- Do NOT include "ui" field — render_ui handles that
+- Do NOT include "ui" in JSON — render_ui() tool handles that
 - Never output markdown tables or raw data
 
-## UI types for render_ui
-stats-card: { label, value, subtext }
-booking-list: { title, bookings: [{id, guest_name, property_name, check_in, check_out, status, amount}] }
-booking-detail: { booking: {id, guest_name, property_name, check_in, check_out, status, amount} }
-property-card: { name, address, platforms }
-chart: { chartType: "revenue"|"platform"|"occupancy"|"status"|"summary"|"property-ranking", title, data }
-table: { title, headers: [col1, col2, ...], rows: [[val1, val2, ...], ...] }
-layout: { columns: 2, children: [ui objects] }
+## Available TOOLS (only 3 for data)
+- get_db_schema(): Check table structures
+- execute_sql(sql, params?): Run SELECT queries for data analysis
+- render_ui(type, props): ALWAYS call last to show results
 
-## TOOLS
-- Simple queries: get_dashboard_summary(), search_bookings(), get_booking_stats_by_property(), get_chart_data(), search_properties(), get_calendar()
-- Complex/custom: get_db_schema() then execute_sql()
-- Data modification: update_booking_status(), add_property_tag(), remove_property_tag()
-- ALWAYS call render_ui() after getting data — this is how users see results`;
+Data modification tools:
+- update_booking_status(), add_property_tag(), remove_property_tag()
+
+## UI types for render_ui
+- stats-card: { label, value, subtext } — simple metrics
+- booking-list: { title, bookings: [...] }
+- chart: { chartType: "revenue"|"platform"|"property-ranking"|"summary"|"status", title, data }
+- table: { title, headers, rows }
+- html: { content: "HTML with inline styles" } — for custom layouts
+
+## STRATEGY
+- For ANY data question → call execute_sql() directly
+- Before complex queries → call get_db_schema() first
+- Use JOIN, GROUP BY, aggregation for analysis
+- For visualizations → try chart or table first, html as fallback`;
 }
 
 // ===== Chat Handler =====
@@ -717,13 +764,7 @@ async function callDeepSeek(messages, toolsEnabled = true) {
 
 // Tool labels for progress display
 const toolLabels = {
-  search_bookings: '🔍 예약 검색',
-  get_dashboard_summary: '📊 통계 요약',
-  search_properties: '🏠 숙소 검색',
-  get_calendar: '📅 캘린더 조회',
-  get_chart_data: '📈 차트 데이터',
-  get_booking_stats_by_property: '🏆 숙소 통계',
-  get_db_schema: '🗄️ DB 조회',
+  get_db_schema: '🗄️ DB 구조 확인',
   execute_sql: '🔎 데이터 분석',
   add_property_tag: '🏷️ 태그 추가',
   remove_property_tag: '🏷️ 태그 제거',
@@ -772,6 +813,19 @@ router.post('/', async (req, res) => {
     const dataModifyingTools = new Set();
     let pendingUI = null;
     let lastDataTool = null; // Track last data query tool for auto-fallback
+    let aiPlan = null; // Track AI's plan if provided
+
+    // Extract plan from first response content if present
+    if (firstChoice.content) {
+      try {
+        const parsed = JSON.parse(firstChoice.content);
+        if (parsed.plan) {
+          aiPlan = parsed.plan;
+          console.log(`📋 AI Plan: ${JSON.stringify(aiPlan)}`);
+        }
+      } catch {}
+    }
+
     if (firstChoice.tool_calls && firstChoice.tool_calls.length > 0) {
       // Add the assistant's tool call message to the conversation
       const messageLog = [...fullMessages, firstChoice];
@@ -800,7 +854,7 @@ router.post('/', async (req, res) => {
           const result = executeTool(name, args);
           const resultStr = JSON.stringify(result);
           // Track last data query tool for auto-fallback
-          if (!['get_db_schema', 'get_chart_data'].includes(name)) {
+          if (!['get_db_schema', 'render_ui'].includes(name)) {
             lastDataTool = { name, result };
           }
           
@@ -851,7 +905,7 @@ router.post('/', async (req, res) => {
               }
               const result = executeTool(name, args);
               // Track last data query tool for auto-fallback
-              if (!['get_db_schema', 'get_chart_data', 'render_ui'].includes(name)) {
+              if (!['get_db_schema', 'render_ui'].includes(name)) {
                 lastDataTool = { name, result };
               }
               currentLog.push({
@@ -890,6 +944,10 @@ router.post('/', async (req, res) => {
 
       const result = parseAIResponse(finalContent);
       if (result) {
+        // Validate plan: check if render_ui was part of plan
+        if (aiPlan && !aiPlan.some(s => s.includes('render_ui')) && !pendingUI) {
+          console.log('⚠️  Plan missing render_ui — auto-generating UI');
+        }
         // Merge pendingUI if AI used render_ui tool
         if (pendingUI) {
           result.ui = pendingUI;
@@ -925,6 +983,13 @@ router.post('/', async (req, res) => {
         return res.json(response);
       }
       console.log('⚠️  AI response not JSON — raw:', finalContent.slice(0, 100).replace(/\n/g, ' '));
+      // Try auto-query as last resort
+      const autoResult = autoQuery(userMessages);
+      if (autoResult) {
+        const fallbackResponse = { message: cleanMessage(finalContent) || `${autoResult.count}건 조회했습니다.`, ui: autoResult.ui };
+        if (dataModifyingTools.size > 0) fallbackResponse._refetch = 'properties';
+        return res.json(fallbackResponse);
+      }
       const fallbackResponse = { message: finalContent, ui: null };
       if (dataModifyingTools.size > 0) {
         fallbackResponse._refetch = 'properties';
@@ -934,14 +999,37 @@ router.post('/', async (req, res) => {
 
     // No tool calls — direct response
     const content = firstChoice.content || '';
-    const result = parseAIResponse(content);
-    if (result) {
-      console.log('📦 Direct canvas:', result.canvas ? `✅ ${result.canvas.items?.length || 0} items` : 'no canvas');
-      if (!result.canvas && isDashboardRequest(userMessages)) {
-        result.canvas = buildAutoCanvas(userMessages, result.ui);
+    const directResult = parseAIResponse(content);
+    if (directResult) {
+      // If AI provided a plan, execute it automatically (plan-first workflow)
+      if (directResult.plan && Array.isArray(directResult.plan) && directResult.plan.length > 0) {
+        console.log(`📋 Executing AI plan: ${JSON.stringify(directResult.plan)}`);
+        const planSteps = parsePlanSteps(directResult.plan);
+        for (const step of planSteps) {
+          const stepResult = executePlanStep(step);
+          if (stepResult && stepResult._render_ui) {
+            // Store render_ui result but don't set yet
+            directResult.ui = { type: stepResult.type, props: stepResult.props };
+            console.log(`🎨 Plan render_ui: ${stepResult.type}`);
+          } else if (stepResult && !stepResult.error) {
+            // Feed data tool result back for next step
+            lastDataTool = { name: step.split('(')[0], result: stepResult };
+            console.log(`📦 Plan step executed: ${step.split('(')[0]}`);
+          }
+        }
+        // If still no UI, auto-generate from last data tool
+        if (!directResult.ui && lastDataTool) {
+          const autoUI = autoGenerateUI(lastDataTool);
+          if (autoUI) directResult.ui = autoUI;
+        }
+        return res.json(directResult);
+      }
+      console.log('📦 Direct canvas:', directResult.canvas ? `✅ ${directResult.canvas.items?.length || 0} items` : 'no canvas');
+      if (!directResult.canvas && isDashboardRequest(userMessages)) {
+        directResult.canvas = buildAutoCanvas(userMessages, directResult.ui);
         console.log('🔄 Injected canvas into direct response');
       }
-      return res.json(result);
+      return res.json(directResult);
     }
     // Fallback: if user asked for dashboard but AI didn't provide canvas, auto-create
     if (isDashboardRequest(userMessages)) {
@@ -951,6 +1039,11 @@ router.post('/', async (req, res) => {
       return res.json({ message: msg, ui: null, canvas });
     }
     console.log('⚠️  Direct response not JSON — raw:', content.slice(0, 100).replace(/\n/g, ' '));
+    // Try auto-query as last resort
+    const autoResult = autoQuery(userMessages);
+    if (autoResult) {
+      return res.json({ message: cleanMessage(content) || `${autoResult.count}건 조회했습니다.`, ui: autoResult.ui });
+    }
     return res.json({ message: cleanMessage(content), ui: null });
 
   } catch (err) {
@@ -1075,7 +1168,7 @@ function parseAIResponse(content) {
   try {
     const parsed = JSON.parse(content);
     if (parsed.message) {
-      return { message: cleanMessage(parsed.message), ui: parsed.ui || null, canvas: parsed.canvas || null, navigate: parsed.navigate || null };
+      return { message: cleanMessage(parsed.message), ui: parsed.ui || null, canvas: parsed.canvas || null, navigate: parsed.navigate || null, plan: parsed.plan || null };
     }
   } catch {}
 
@@ -1098,6 +1191,7 @@ function parseAIResponse(content) {
           ui: parsed.ui || null,
           canvas: parsed.canvas || null,
           navigate: parsed.navigate || null,
+          plan: parsed.plan || null,
         };
       }
     } catch {}
@@ -1125,6 +1219,7 @@ function parseAIResponse(content) {
               ui: parsed.ui || null,
               canvas: parsed.canvas || null,
               navigate: parsed.navigate || null,
+              plan: parsed.plan || null,
             };
           }
         } catch {}

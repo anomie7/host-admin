@@ -1,4 +1,4 @@
-◇ injected env (1) from ../.env // tip: ⌘ custom filepath { path: '/custom/path/.env' }
+◇ injected env (1) from ../.env // tip: ◈ encrypted .env [www.dotenvx.com]
 node:events:485
       throw er; // Unhandled 'error' event
       ^
