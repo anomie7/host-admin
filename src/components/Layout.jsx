@@ -89,7 +89,7 @@ export default function Layout({ children, title }) {
                 fontFamily: 'var(--font-ui)', boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
               }}>
                 <span style={{ fontSize: 15 }}>💬</span>
-                <span>{panelOpen ? '접기' : 'AI 채팅'}</span>
+                <span>{panelOpen ? '접기' : 'AI 어시스턴트'}</span>
               </button>
             ) : (
               <button onClick={togglePanel} style={{
@@ -103,7 +103,7 @@ export default function Layout({ children, title }) {
                 transition: 'all 150ms ease',
               }}>
                 <span style={{ fontSize: 15 }}>💬</span>
-                <span>{panelOpen ? 'AI 채팅 접기' : 'AI 채팅 열기'}</span>
+                <span>{panelOpen ? 'AI 어시스턴트 접기' : 'AI 어시스턴트 열기'}</span>
                 <span style={{
                   fontSize: 11, display: 'inline-block',
                   transform: panelOpen ? 'rotate(0deg)' : 'rotate(180deg)',
