@@ -706,7 +706,13 @@ Data modification tools:
 You do NOT know the database contents. You MUST look up data using tools.
 
 ## Output format (JSON ONLY — no other text)
-{ "plan": ["get_db_schema()", "execute_sql(\"SELECT ...\")", "render_ui(\"table\", {title: \"...\", headers: [...], rows: [...]})"], "message": "한국어 설명" }`;
+{ "plan": ["get_db_schema()", "execute_sql(\"SELECT ...\")", "render_ui(\"table\", {title: \"...\", headers: [...], rows: [...]})"], "message": "한국어 설명" }
+
+## Canvas/Dashboard requests
+If the user asks for "대시보드", "캔버스", "한눈에", "시각화", "보기 좋게":
+- Plan should include MULTIPLE execute_sql calls to gather diverse data
+- End with render_ui("chart", ...) or render_ui("layout", ...)
+- The system will auto-build a dashboard from the data`;
 }
 
 function getExecutorPrompt() {
@@ -1155,7 +1161,46 @@ class Orchestrator {
     };
   }
 
+  // Check if this is a follow-up canvas/dashboard request with existing data
+  isCanvasFollowup() {
+    if (this.userMessages.length < 2) return false;
+    const lastMsg = this.userMessages[this.userMessages.length - 1];
+    const text = lastMsg?.content || '';
+    // Check for canvas/dashboard keywords
+    const isCanvasReq = /대시보드|대쉬보드|캔버스|canvas|한눈에|시각화|보기 좋게|만들어줘|만들어 봐/.test(text);
+    if (!isCanvasReq) return false;
+    // Check if there's previous assistant message with UI data
+    const hasPrevData = this.userMessages.some(m => m.role === 'assistant' && (m.content || '').includes('[DATA:'));
+    return hasPrevData;
+  }
+
+  // Find the last UI from conversation history
+  findLastUI() {
+    for (let i = this.userMessages.length - 1; i >= 0; i--) {
+      const m = this.userMessages[i];
+      if (m.role === 'assistant' && m.content?.includes('[DATA:')) {
+        return null; // Let buildAutoCanvas handle it
+      }
+    }
+    return null;
+  }
+
   async run() {
+    // For follow-up canvas requests, build directly from conversation context
+    if (this.isCanvasFollowup()) {
+      console.log('🖼️ Detected canvas follow-up request — building from context');
+      await this.phase('planning');
+      const canvas = buildAutoCanvas(this.userMessages);
+      if (canvas && canvas.items && canvas.items.length > 0) {
+        this.state.planSteps = [{ label: '🎨 캔버스 생성', status: 'completed' }];
+        this.send('plan', { steps: ['🎨 캔버스 생성'] });
+        this.send('complete', { message: '대시보드를 생성했습니다.', ui: this.findLastUI(), canvas });
+      } else {
+        this.send('complete', { message: '대시보드를 생성할 데이터가 부족합니다.', ui: null });
+      }
+      return;
+    }
+
     await this.phase('planning');
     const planned = await this.plan();
     if (!planned) return;
@@ -1396,7 +1441,18 @@ class Orchestrator {
       const result = parseAIResponse(finalContent);
       if (result) {
         if (dataModifyingTools.size > 0) result._refetch = 'properties';
-        if (this.state.pendingUI) result.ui = this.state.pendingUI;
+        // ALWAYS attach UI: use pendingUI, fallback to autoGenerateUI
+        if (this.state.pendingUI) {
+          result.ui = this.state.pendingUI;
+        } else if (this.state.lastDataTool) {
+          const autoUI = autoGenerateUI(this.state.lastDataTool);
+          if (autoUI) result.ui = autoUI;
+        }
+        // Canvas integration: detect dashboard/canvas requests
+        if (!result.canvas && isDashboardRequest(this.userMessages)) {
+          result.canvas = buildAutoCanvas(this.userMessages, result.ui);
+          console.log('🔄 Orchestrator injected canvas');
+        }
         this.send('complete', result);
         return;
       }
@@ -1406,11 +1462,20 @@ class Orchestrator {
     if (pendingUI) {
       const result = { message: '조회가 완료되었습니다.', ui: pendingUI };
       if (dataModifyingTools.size > 0) result._refetch = 'properties';
+      // Canvas integration
+      if (isDashboardRequest(this.userMessages)) {
+        result.canvas = buildAutoCanvas(this.userMessages, result.ui);
+      }
       this.send('complete', result);
     } else if (lastDataTool) {
       const autoUI = autoGenerateUI(lastDataTool);
       const message = autoUI ? '조회 결과를 정리했습니다.' : '데이터를 확인해주세요.';
-      this.send('complete', { message, ui: autoUI || null });
+      const result = { message, ui: autoUI || null };
+      if (dataModifyingTools.size > 0) result._refetch = 'properties';
+      if (isDashboardRequest(this.userMessages)) {
+        result.canvas = buildAutoCanvas(this.userMessages, result.ui);
+      }
+      this.send('complete', result);
     } else {
       this.send('complete', { message: '죄송합니다, 요청을 처리하지 못했습니다.', ui: null });
     }

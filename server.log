@@ -1,10 +1,21 @@
-◇ injected env (1) from ../.env // tip: ◈ encrypted .env [www.dotenvx.com]
-🏨 Host Admin server running on port 4001
-📋 SSE auto-plan: ["🗄️ DB 구조 확인","🎨 UI 생성"]
-📋 SSE plan extended: +🔎 데이터 분석
-🎨 SSE render_ui: stats-card
-📋 SSE auto-plan: ["🔎 데이터 분석","🎨 UI 생성"]
-🎨 SSE render_ui: chart
-📋 SSE auto-plan: ["🔎 데이터 분석","🎨 UI 생성"]
-📋 SSE plan extended: +🗄️ DB 구조 확인
-🎨 SSE render_ui: booking-list
+◇ injected env (1) from ../.env // tip: ⌁ auth for agents [www.vestauth.com]
+node:events:485
+      throw er; // Unhandled 'error' event
+      ^
+
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4001
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at node:net:2206:7
+    at process.processTicksAndRejections (node:internal/process/task_queues:90:21)
+Emitted 'error' event on Server instance at:
+    at emitErrorNT (node:net:1976:8)
+    at process.processTicksAndRejections (node:internal/process/task_queues:90:21) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '0.0.0.0',
+  port: 4001
+}
+
+Node.js v24.2.0
