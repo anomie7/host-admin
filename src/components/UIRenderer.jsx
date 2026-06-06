@@ -4,6 +4,7 @@ import BookingDetailMini from './BookingDetailMini';
 import StatsCardMini from './StatsCardMini';
 import PropertyCardMini from './PropertyCardMini';
 import ChartWidget from './ChartWidget';
+import LayoutWidget from './LayoutWidget';
 
 export default function UIRenderer({ ui, onAddToCanvas, compact }) {
   if (!ui || !ui.type) return null;
@@ -20,6 +21,8 @@ export default function UIRenderer({ ui, onAddToCanvas, compact }) {
         return <PropertyCardMini {...ui.props} />;
       case 'chart':
         return <ChartWidget {...ui.props} />;
+      case 'layout':
+        return <LayoutWidget columns={ui.props?.columns} children={ui.props?.children} gap={ui.props?.gap} />;
       default:
         return null;
     }

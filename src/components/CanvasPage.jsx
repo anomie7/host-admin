@@ -189,6 +189,7 @@ function componentLabel(type) {
     'stats-card': '📊 통계',
     'property-card': '🏠 숙소 정보',
     'chart': '📈 차트',
+    'layout': '📐 레이아웃',
   };
   return labels[type] || type;
 }

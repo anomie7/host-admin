@@ -574,7 +574,7 @@ For complex or custom queries, first call get_db_schema() to see the table struc
 
 ### 필드 설명:
 - "message" (필수): 사용자에게 보여줄 한국어 텍스트
-- "ui" (선택): 시각적 컴포넌트 (booking-list, booking-detail, stats-card, property-card, chart)
+- "ui" (선택): 시각적 컴포넌트 (booking-list, booking-detail, stats-card, property-card, chart, layout)
 - "canvas" (선택): 대시보드용 아이템 배열 (아래 CANVAS FIELD 참고)
 
 ### 중요 규칙:
@@ -593,6 +593,26 @@ booking-detail: { "type": "booking-detail", "props": { "booking": { "id": 1, "gu
 stats-card: { "type": "stats-card", "props": { "label": "레이블", "value": "값", "subtext": "부가설명" } }
 
 property-card: { "type": "property-card", "props": { "name": "숙소명", "address": "주소", "platforms": ["airbnb"] } }
+
+### LAYOUT — 복합 UI 그리드 (권장)
+
+layout은 여러 UI 컴포넌트를 그리드로 배열합니다. stats-card 하나만 보내는 대신 layout으로 묶어서 보내면 더 풍부한 화면이 됩니다.
+
+{ "type": "layout", "props": { "columns": 2, "gap": 12, "children": [
+  { "type": "stats-card", "props": { "label": "이번달 수익", "value": "₩2,713,726", "subtext": "10건 예약" } },
+  { "type": "stats-card", "props": { "label": "평균 객단가", "value": "₩271,373", "subtext": "점유율 33%" } },
+  { "type": "chart", "props": { "chartType": "platform", "title": "플랫폼별 수익", "data": [] } },
+  { "type": "stats-card", "props": { "label": "오늘 체크인", "value": "1건", "subtext": "₩160,597" } }
+] } }
+
+columns: 그리드 열 수 (기본 2)
+gap: 아이템 간 간격 (기본 12)
+children: UI 컴포넌트 배열 (type + props)
+
+사용처:
+- "이번달 총 수익이 얼마지?" → stats-card 2개 + chart를 2열 layout
+- "다음주 체크인 누구야?" → stats-card + booking-list를 2열 layout
+- 복합 질문("수익 알려주고 차트도 보여줘") → layout이 항상 더 나음
 
 ### CHART TYPES (Recharts 기반)
 
