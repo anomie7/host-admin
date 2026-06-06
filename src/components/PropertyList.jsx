@@ -36,6 +36,23 @@ export default function PropertyList() {
       .finally(() => setLoading(false));
   }, []);
 
+  // Auto-refresh when returning to this page (tab focus / visibility change)
+  useEffect(() => {
+    const refetch = () => {
+      api.getProperties()
+        .then(setProperties)
+        .catch(() => {});
+    };
+    window.addEventListener('focus', refetch);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') refetch();
+    });
+    return () => {
+      window.removeEventListener('focus', refetch);
+      document.removeEventListener('visibilitychange', refetch);
+    };
+  }, []);
+
   const handleDelete = async (e, id) => {
     e.stopPropagation();
     if (!confirm('Delete this property?')) return;
