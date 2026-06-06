@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useCanvas } from '../context/CanvasContext';
-import { useSidePanel } from '../context/SidePanelContext';
 import ChatBubble from './ChatBubble';
 import ChatInput from './ChatInput';
 import UIRenderer from './UIRenderer';
@@ -14,7 +13,6 @@ export default function ChatPanel() {
   const listRef = useRef(null);
   const canvas = useCanvas();
   const navigate = useNavigate();
-  const { close: closeSidePanel } = useSidePanel();
 
   useEffect(() => {
     if (listRef.current) {
@@ -74,7 +72,7 @@ export default function ChatPanel() {
         const title = data.canvas.title || '대시보드';
         canvas.createSession(title, data.canvas.items);
         assistantMsg.canvasAdded = true;
-        setTimeout(() => { closeSidePanel(); navigate('/canvas'); }, 500);
+        setTimeout(() => { navigate('/canvas'); }, 500);
       }
 
       // If AI modified data (tags, booking status), broadcast refresh event

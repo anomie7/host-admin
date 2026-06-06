@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { useSidePanel } from '../context/SidePanelContext';
+import SidePanel from './SidePanel';
 
 // SVG icons as components
 const IconDashboard = () => (
@@ -46,10 +46,8 @@ const IconCanvas = () => (
 );
 
 export default function Layout({ children, title }) {
-  const { isOpen, toggle } = useSidePanel();
-
   return (
-    <>
+    <div className="app-layout">
       <nav className="sidebar" aria-label="메인 내비게이션">
         <div className="sidebar-logo" aria-hidden="true">H</div>
         <div className="sidebar-nav">
@@ -70,22 +68,13 @@ export default function Layout({ children, title }) {
       <div className="main-area">
         <header className="main-header">
           <h1>{title || '호스트 관리자'}</h1>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <button
-              className={`ai-toggle-btn ${isOpen ? 'ai-toggle-btn--active' : ''}`}
-              onClick={toggle}
-              aria-label="AI 어시스턴트"
-              title="AI 어시스턴트"
-            >
-              🤖
-            </button>
-            <span style={{ fontSize: '12px', color: 'var(--text-dim)', fontFamily: 'var(--font-display)' }}>Warm Stay</span>
-          </div>
+          <span style={{ fontSize: '12px', color: 'var(--text-dim)', fontFamily: 'var(--font-display)' }}>Warm Stay</span>
         </header>
         <main className="main-content stagger">
           {children}
         </main>
       </div>
-    </>
+      <SidePanel />
+    </div>
   );
 }
