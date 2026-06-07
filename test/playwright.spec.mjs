@@ -163,17 +163,16 @@ test.describe('Property Tags', () => {
 });
 
 test.describe('AI Booking Detail', () => {
-  test('booking-list shows property_name and guest_name for each item', async ({ page }) => {
+  test('booking-list shows property_name and guest_name for each item', async () => {
     test.skip(!process.env.DEEPSEEK_API_KEY, 'DEEPSEEK_API_KEY not set');
 
-    // Direct API call — fast, no UI waiting
-    const res = await page.request.post(`${BASE}/api/chat/stream`, {
+    // Use global fetch which Playwright provides
+    const res = await fetch(`${BASE}/api/chat/stream`, {
+      method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      data: { messages: [{ role: 'user', content: '2월 예약 건들 상세하게 보여줘' }] },
+      body: JSON.stringify({ messages: [{ role: 'user', content: '2월 예약 건들 상세하게 보여줘' }] }),
     });
-
-    // Consume SSE stream
-    let body = await res.text();
+    const body = await res.text();
     const lines = body.split('\n');
     let lastData = '';
     for (let i = lines.length - 1; i >= 0; i--) {
@@ -202,31 +201,44 @@ test.describe('AI Booking Detail', () => {
     test.skip(!process.env.DEEPSEEK_API_KEY, 'DEEPSEEK_API_KEY not set');
 
     await page.goto(BASE);
-
-    // Wait for side panel chat input
     await page.waitForTimeout(1500);
 
-    // Look for chat input in the side panel
-    const chatInput = page.locator('.chat-input textarea, .chat-input input, input[type="text"]').first();
+    // Click collapse button to open side panel if not already open
+    const panel = page.locator('.side-panel.side-panel--open');
+    if (!(await panel.isVisible().catch(() => false))) {
+      const collapse = page.locator('.side-panel-collapse');
+      if (await collapse.isVisible().catch(() => false)) {
+        await collapse.click();
+        await page.waitForTimeout(500);
+      }
+    }
+
+    // Find chat input
+    const chatInput = page.locator('textarea.chat-input').first();
     await expect(chatInput).toBeVisible({ timeout: 5000 });
 
-    // Type query
-    await chatInput.fill('2월 예약 건들 상세하게 보여줘');
-    await chatInput.press('Enter');
+    // Type query and submit via button click
+    const query = '2월 예약 건들 상세하게 보여줘';
+    await chatInput.fill(query);
+    await page.waitForTimeout(300);
+    const sendBtn = page.locator('button[aria-label="전송"], button.chat-send-btn, button:has-text("➤")').first();
+    if (await sendBtn.isVisible().catch(() => false)) {
+      await sendBtn.click();
+    } else {
+      await chatInput.press('Enter');
+    }
 
     // Wait for AI to generate response (plan → execute → render)
-    await page.waitForTimeout(25000);
+    await page.waitForTimeout(35000);
 
-    // Check for booking items with property names
+    // Check for booking items
     const bookingItems = page.locator('.mini-booking-item');
     const count = await bookingItems.count();
     expect(count).toBeGreaterThan(0);
 
-    // Each booking should show property name
+    // First item should show property name
     const firstItem = bookingItems.first();
     await expect(firstItem).toContainText(/숙소|스튜디오|하우스|레지던스|펜션|플랫|스테이|게스트하우스/);
-
-    // And guest name or check-in date
     await expect(firstItem).toContainText(/→|입실|체크|퇴실|취소|김|이|박|최|정|강|한|송|윤/);
   });
 });
