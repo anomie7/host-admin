@@ -468,6 +468,7 @@ textarea.form-input { resize: vertical; min-height: 80px; }
     right: 0;
     width: 100vw;
     height: 100vh;
+    height: 100dvh; /* dynamic viewport height for browsers that support it */
     z-index: 55;
     border-left: none;
     transform: translateX(100%);
@@ -597,6 +598,7 @@ textarea.form-input { resize: vertical; min-height: 80px; }
   margin-bottom: 12px;
   position: relative;
   flex-shrink: 0;
+  min-height: 44px;
 }
 
 .chat-session-toggle {
@@ -760,6 +762,7 @@ textarea.form-input { resize: vertical; min-height: 80px; }
   align-items: flex-end;
   padding-top: 12px;
   border-top: 1px solid var(--border-light);
+  flex-shrink: 0;
 }
 
 .chat-input {

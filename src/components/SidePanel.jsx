@@ -14,10 +14,31 @@ function loadWidth() {
 
 export default function SidePanel({ open, onClose, onToggle, isMobile }) {
   const [panelWidth, setPanelWidth] = useState(loadWidth);
+  const [viewportHeight, setViewportHeight] = useState('100vh');
   const resizing = useRef(false);
   const startX = useRef(0);
   const startWidth = useRef(0);
   const panelRef = useRef(null);
+
+  // Mobile keyboard adjustment via visualViewport API
+  useEffect(() => {
+    if (!isMobile) return;
+    const handleResize = () => {
+      if (window.visualViewport) {
+        const vh = window.visualViewport.height;
+        const full = window.screen?.height || window.innerHeight;
+        if (vh < full * 0.85) {
+          // Keyboard is likely open — use visualViewport height
+          setViewportHeight(`${vh}px`);
+        } else {
+          setViewportHeight('100dvh');
+        }
+      }
+    };
+    handleResize();
+    window.visualViewport?.addEventListener('resize', handleResize);
+    return () => window.visualViewport?.removeEventListener('resize', handleResize);
+  }, [isMobile]);
 
   // Apply custom width to panel (desktop only)
   useEffect(() => {
@@ -80,7 +101,7 @@ export default function SidePanel({ open, onClose, onToggle, isMobile }) {
         ref={panelRef}
         className={panelClass}
         aria-label="AI 어시스턴트"
-        style={!isMobile && panelWidth && open ? { width: panelWidth, minWidth: MIN_WIDTH } : undefined}
+        style={!isMobile && panelWidth && open ? { width: panelWidth, minWidth: MIN_WIDTH } : isMobile && open ? { height: viewportHeight } : undefined}
       >
         <div className="side-panel-header">
           <span style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 600 }}>💬 AI 어시스턴트</span>
