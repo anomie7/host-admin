@@ -9,3 +9,4 @@ visual-test.mjs
 reference.mjs
 *.timestamp-*.mjs
 server.log
+test-results/
