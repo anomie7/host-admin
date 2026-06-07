@@ -644,9 +644,13 @@ Data modification tools:
 ## Plan rules
 1. Plan is an array of strings: ["tool_name(args)", ...]
 2. ALWAYS end with render_ui()
-3. First call get_db_schema() if you need table structure
+3. First call get_db_schema() to check table structure (usually you only need this once)
 4. For simple questions → execute_sql() directly
 5. Before complex queries → get_db_schema() first
+
+## Database Schema (for reference, skip get_db_schema() for common queries)
+TABLE properties: id(INT PK), name(TEXT), address(TEXT), description(TEXT), photos(TEXT/json), platforms(TEXT/json), tags(TEXT/json), created_at(TEXT), updated_at(TEXT)
+TABLE bookings: id(INT PK), property_id(INT FK), guest_name(TEXT), check_in(TEXT YYYY-MM-DD), check_out(TEXT YYYY-MM-DD), status(TEXT: upcoming|checked_in|checked_out|cancelled), platform(TEXT: airbnb|booking|liveanywhere), amount(INT KRW), settlement_date(TEXT), notes(TEXT), created_at(TEXT)
 
 ## USING CONVERSATION HISTORY
 The user messages include [CONTEXT:] markers from previous responses.
@@ -695,6 +699,10 @@ Your ONLY job: execute the given plan step by step using tools.
 ## Available tools
 get_db_schema(), execute_sql(sql, params?), render_ui(type, props)
 update_booking_status(), add_property_tag(), remove_property_tag()
+
+## Database Schema
+TABLE properties: id(INT PK), name(TEXT), address(TEXT), description(TEXT), photos(TEXT/json), platforms(TEXT/json), tags(TEXT/json), created_at(TEXT), updated_at(TEXT)
+TABLE bookings: id(INT PK), property_id(INT FK), guest_name(TEXT), check_in(TEXT YYYY-MM-DD), check_out(TEXT YYYY-MM-DD), status(TEXT: upcoming|checked_in|checked_out|cancelled), platform(TEXT: airbnb|booking|liveanywhere), amount(INT KRW), settlement_date(TEXT), notes(TEXT), created_at(TEXT)
 
 ## UI types for render_ui (MUST call this as last step!)
 - stats-card: { label, value, subtext }
