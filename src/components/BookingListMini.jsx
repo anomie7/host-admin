@@ -8,6 +8,13 @@ const statusLabels = {
   cancelled: '취소됨',
 };
 
+const statusColors = {
+  upcoming: '#f59e0b',
+  checked_in: '#10b981',
+  checked_out: '#6b7280',
+  cancelled: '#ef4444',
+};
+
 const statusFlow = {
   upcoming: ['checked_in', 'cancelled'],
   checked_in: ['checked_out', 'cancelled'],
@@ -16,11 +23,12 @@ const statusFlow = {
 };
 
 function formatWon(amount) {
+  if (amount == null) return '';
   return `₩${Number(amount).toLocaleString()}`;
 }
 
-function StatusBadge({ status, children }) {
-  return <span className={`badge badge-${status}`} style={{ fontSize: 10 }}>{children}</span>;
+function safe(fn, fallback = '') {
+  try { return fn() ?? fallback; } catch { return fallback; }
 }
 
 export default function BookingListMini({ title, bookings: initialBookings }) {
@@ -54,24 +62,54 @@ export default function BookingListMini({ title, bookings: initialBookings }) {
       {title && <div className="mini-card-title">{title}</div>}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         {bookings.map(b => {
-          const nextStatuses = statusFlow[b.status] || [];
+          const guestName = b.guest_name || b.guestName || b.guest || '게스트';
+          const propertyName = b.property_name || b.propertyName || b.property || '';
+          const checkIn = b.check_in || b.checkIn || '';
+          const checkOut = b.check_out || b.checkOut || '';
+          const status = b.status || '';
+          const amount = b.amount || 0;
+          const platform = b.platform || '';
+          const id = b.id || '';
+
+          const nextStatuses = statusFlow[status] || [];
           return (
-            <div key={b.id} className="mini-booking-item">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <strong style={{ fontSize: 13 }}>{b.guest_name}</strong>
-                  <StatusBadge status={b.status}>
-                    {statusLabels[b.status] || b.status}
-                  </StatusBadge>
+            <div key={id} className="mini-booking-item">
+              {/* Primary: property name + status */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{
+                      fontSize: 12, fontWeight: 600, color: 'var(--text-primary)',
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    }}>
+                      {propertyName || '(숙소 정보 없음)'}
+                    </span>
+                    {id ? <span style={{ fontSize: 9, color: 'var(--text-dim)' }}>#{id}</span> : null}
+                  </div>
                 </div>
+                <span className={`badge badge-${status}`} style={{
+                  fontSize: 10, flexShrink: 0, background: statusColors[status] || '#999',
+                  color: '#fff', padding: '1px 8px', borderRadius: 10, fontWeight: 600,
+                }}>
+                  {statusLabels[status] || status}
+                </span>
               </div>
-              <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 2 }}>
-                {b.check_in} → {b.check_out}
-                {b.amount ? ` · ${formatWon(b.amount)}` : ''}
+
+              {/* Guest + date */}
+              <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 4, display: 'flex', justifyContent: 'space-between' }}>
+                <span>
+                  {guestName}
+                </span>
+                <span>
+                  {checkIn ? `${checkIn.slice(5)}→${checkOut ? checkOut.slice(5) : ''}` : '날짜 정보 없음'}
+                </span>
               </div>
-              {b.property_name && (
-                <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>@{b.property_name}</div>
-              )}
+
+              {/* Amount + platform */}
+              <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 2, display: 'flex', justifyContent: 'space-between' }}>
+                <span>{amount ? formatWon(amount) : ''}</span>
+                <span>{platform ? platform : ''}</span>
+              </div>
 
               {/* Quick status change buttons */}
               {nextStatuses.length > 0 && (
@@ -80,11 +118,11 @@ export default function BookingListMini({ title, bookings: initialBookings }) {
                     <button
                       key={s}
                       className={`btn btn-sm ${s === 'cancelled' ? 'btn-secondary' : 'btn-primary'}`}
-                      onClick={() => handleStatusChange(b.id, s)}
-                      disabled={savingId === b.id}
+                      onClick={() => handleStatusChange(id, s)}
+                      disabled={savingId === id}
                       style={{ fontSize: 10, padding: '2px 8px' }}
                     >
-                      {savingId === b.id ? '...' : statusLabels[s]}
+                      {savingId === id ? '...' : statusLabels[s]}
                     </button>
                   ))}
                 </div>

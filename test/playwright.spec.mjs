@@ -161,3 +161,72 @@ test.describe('Property Tags', () => {
     expect((await delRes.json()).tags).not.toContain(tag);
   });
 });
+
+test.describe('AI Booking Detail', () => {
+  test('booking-list shows property_name and guest_name for each item', async ({ page }) => {
+    test.skip(!process.env.DEEPSEEK_API_KEY, 'DEEPSEEK_API_KEY not set');
+
+    // Direct API call — fast, no UI waiting
+    const res = await page.request.post(`${BASE}/api/chat/stream`, {
+      headers: { 'Content-Type': 'application/json' },
+      data: { messages: [{ role: 'user', content: '2월 예약 건들 상세하게 보여줘' }] },
+    });
+
+    // Consume SSE stream
+    let body = await res.text();
+    const lines = body.split('\n');
+    let lastData = '';
+    for (let i = lines.length - 1; i >= 0; i--) {
+      if (lines[i].startsWith('event: complete')) break;
+      if (lines[i].startsWith('data: ')) lastData = lines[i].slice(6);
+    }
+    const data = JSON.parse(lastData);
+
+    expect(data.ui).toBeTruthy();
+    expect(data.ui.type).toBe('booking-list');
+    expect(data.ui.props).toBeTruthy();
+    expect(Array.isArray(data.ui.props.bookings)).toBe(true);
+    expect(data.ui.props.bookings.length).toBeGreaterThan(0);
+
+    // Every booking must have required fields
+    for (const b of data.ui.props.bookings) {
+      expect(b.guest_name).toBeTruthy();
+      expect(b.property_name).toBeTruthy();
+      expect(b.check_in).toBeTruthy();
+      expect(b.check_out).toBeTruthy();
+      expect(b.status).toBeTruthy();
+    }
+  });
+
+  test('booking-list renders in chat with visible property names', async ({ page }) => {
+    test.skip(!process.env.DEEPSEEK_API_KEY, 'DEEPSEEK_API_KEY not set');
+
+    await page.goto(BASE);
+
+    // Wait for side panel chat input
+    await page.waitForTimeout(1500);
+
+    // Look for chat input in the side panel
+    const chatInput = page.locator('.chat-input textarea, .chat-input input, input[type="text"]').first();
+    await expect(chatInput).toBeVisible({ timeout: 5000 });
+
+    // Type query
+    await chatInput.fill('2월 예약 건들 상세하게 보여줘');
+    await chatInput.press('Enter');
+
+    // Wait for AI to generate response (plan → execute → render)
+    await page.waitForTimeout(25000);
+
+    // Check for booking items with property names
+    const bookingItems = page.locator('.mini-booking-item');
+    const count = await bookingItems.count();
+    expect(count).toBeGreaterThan(0);
+
+    // Each booking should show property name
+    const firstItem = bookingItems.first();
+    await expect(firstItem).toContainText(/숙소|스튜디오|하우스|레지던스|펜션|플랫|스테이|게스트하우스/);
+
+    // And guest name or check-in date
+    await expect(firstItem).toContainText(/→|입실|체크|퇴실|취소|김|이|박|최|정|강|한|송|윤/);
+  });
+});

@@ -187,6 +187,45 @@ function autoGenerateUI(lastDataTool) {
   }
 }
 
+// Hydrate booking-list UI from SQL {columns, rows} format
+// When AI calls render_ui("booking-list", {...}) with columns/rows data,
+// convert to proper booking objects automatically.
+function hydrateBookingUI(pendingUI) {
+  if (!pendingUI || pendingUI.type !== 'booking-list') return pendingUI;
+  const props = pendingUI.props;
+  if (!props) return pendingUI;
+
+  // Check if props has columns+rows (SQL result format) instead of bookings
+  if (props.columns && Array.isArray(props.columns) && props.rows && Array.isArray(props.rows)) {
+    const { columns, rows } = props;
+    const colSet = new Set(columns.map(c => c.toLowerCase()));
+    if (colSet.has('guest_name') && colSet.has('check_in')) {
+      const bookings = rows.map(r => {
+        const obj = {};
+        columns.forEach((c, i) => { obj[c] = r[i]; });
+        return obj;
+      });
+      console.log(`💧 Hydrated booking-list: ${bookings.length}건 (from columns/rows)`);
+      return { type: 'booking-list', props: { title: props.title || '예약 목록', bookings } };
+    }
+  }
+
+  // Check if bookings array exists but items are missing critical fields
+  if (props.bookings && Array.isArray(props.bookings) && props.bookings.length > 0) {
+    const sample = props.bookings[0];
+    const hasGuest = sample.guest_name || sample.guestName || sample.guest;
+    const hasProperty = sample.property_name || sample.propertyName || sample.property;
+    const hasCheckin = sample.check_in || sample.checkIn || sample.checkin;
+    
+    if (!hasGuest && !hasProperty) {
+      console.log('⚠️ Booking-list missing critical fields — checking lastDataTool for hydration');
+      return { ...pendingUI, _needsHydration: true };
+    }
+  }
+
+  return pendingUI;
+}
+
 // Execute a plan array from AI (string steps like "execute_sql(...)" or "render_ui(type, props)")
 function executePlanStep(step) {
   // Parse: "tool_name(arg1, arg2, ...)" or "tool_name({json args})"
@@ -804,8 +843,10 @@ router.post('/', async (req, res) => {
           if (name === 'render_ui') {
             let props = args.props;
             if (typeof props === 'string') { try { props = JSON.parse(props); } catch {} }
-            pendingUI = { type: args.type, props: props };
-            console.log(`🎨 render_ui stored: ${args.type}`);
+            let ui = { type: args.type, props: props };
+            ui = hydrateBookingUI(ui);
+            pendingUI = ui;
+            console.log(`🎨 render_ui stored: ${args.type}${ui._needsHydration ? ' (needs hydration)' : ''}`);
             const resultStr = JSON.stringify({ ok: true, rendered: args.type });
             messageLog.push({ role: 'tool', tool_call_id: tc.id, content: resultStr });
             continue;
@@ -861,8 +902,10 @@ router.post('/', async (req, res) => {
               if (name === 'render_ui') {
                 let props = args.props;
                 if (typeof props === 'string') { try { props = JSON.parse(props); } catch {} }
-                pendingUI = { type: args.type, props: props };
-                console.log(`🎨 render_ui (round ${toolRound + 2}): ${args.type}`);
+                let ui = { type: args.type, props: props };
+                ui = hydrateBookingUI(ui);
+                pendingUI = ui;
+                console.log(`🎨 render_ui (round ${toolRound + 2}): ${args.type}${ui._needsHydration ? ' (needs hydration)' : ''}`);
                 currentLog.push({ role: 'tool', tool_call_id: tc.id, content: JSON.stringify({ ok: true, rendered: args.type }) });
                 continue;
               }
@@ -1257,8 +1300,10 @@ class Orchestrator {
         if (name === 'render_ui') {
           let props = args.props;
           if (typeof props === 'string') { try { props = JSON.parse(props); } catch {} }
-          this.state.pendingUI = { type: args.type, props: props };
-          console.log(`🎨 Executor render_ui: ${args.type}`);
+          let ui = { type: args.type, props: props };
+          ui = hydrateBookingUI(ui);
+          this.state.pendingUI = ui;
+          console.log(`🎨 Executor render_ui: ${args.type}${ui._needsHydration ? ' (needs hydration)' : ''}`);
           this.send('tool', { name, label, status: 'done' });
           if (activeIdx >= 0) this.sendStep(activeIdx, 'completed');
           this.state.executionLog.push({ type: 'render_ui', ui: this.state.pendingUI });
@@ -1288,8 +1333,19 @@ class Orchestrator {
   async verify() {
     const { pendingUI, lastDataTool, plan, executionLog } = this.state;
 
+    // Check 0: Try hydration if booking-list needs it
+    let effectiveUI = pendingUI;
+    if (effectiveUI && effectiveUI._needsHydration && lastDataTool) {
+      const hydrated = autoGenerateUI(lastDataTool);
+      if (hydrated && hydrated.type === 'booking-list') {
+        effectiveUI = hydrated;
+        this.state.pendingUI = hydrated;
+        console.log(`💧 Hydrated booking-list from lastDataTool: ${hydrated.props?.bookings?.length}건`);
+      }
+    }
+
     // Check 1: render_ui called?
-    if (!pendingUI) {
+    if (!effectiveUI) {
       if (lastDataTool) {
         const autoUI = autoGenerateUI(lastDataTool);
         if (autoUI) {
@@ -1306,9 +1362,9 @@ class Orchestrator {
 
     // Check 2: Has data? Be flexible about data formats
     let hasData = false;
-    if (pendingUI.props) {
-      const p = pendingUI.props;
-      switch (pendingUI.type) {
+    if (effectiveUI.props) {
+      const p = effectiveUI.props;
+      switch (effectiveUI.type) {
         case 'booking-list':
           hasData = Array.isArray(p.bookings) && p.bookings.length > 0;
           break;
