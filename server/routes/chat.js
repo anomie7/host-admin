@@ -1,5 +1,10 @@
 import { Router } from 'express';
 import { getDb } from '../db.js';
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const router = Router();
 const DEEPSEEK_API_URL = 'https://api.deepseek.com/v1/chat/completions';
@@ -480,6 +485,41 @@ function executeTool(name, args) {
   switch (name) {
 
     case 'get_db_schema': {
+      // Try to read from schema doc first (faster, no DB query)
+      try {
+        const docPath = path.join(__dirname, '..', 'db-schema.md');
+        if (fs.existsSync(docPath)) {
+          const content = fs.readFileSync(docPath, 'utf-8');
+          const schema = [];
+          const tableRegex = /^## (.+)$/gm;
+          let match;
+          while ((match = tableRegex.exec(content)) !== null) {
+            const tableName = match[1];
+            if (tableName === 'Example Queries') continue;
+            const rowsMatch = content.slice(match.index).match(/^(\d+) rows/);
+            const rowCount = rowsMatch ? parseInt(rowsMatch[1]) : 0;
+            const columns = [];
+            const colRegex = /^\| (\w+) \| (\w+) \| (.*?) \|/gm;
+            const tableSection = content.slice(match.index, content.indexOf('\n## ', match.index + 1) >= 0 ? content.indexOf('\n## ', match.index + 1) : content.length);
+            let colMatch;
+            while ((colMatch = colRegex.exec(tableSection)) !== null) {
+              const pk = colMatch[3].includes('PK');
+              const notnull = colMatch[3].includes('NOT NULL');
+              columns.push({ name: colMatch[1], type: colMatch[2], notnull, pk });
+            }
+            if (columns.length > 0) {
+              schema.push({ table: tableName, columns, row_count: rowCount });
+            }
+          }
+          if (schema.length > 0) {
+            console.log('📄 Schema from db-schema.md');
+            return schema;
+          }
+        }
+      } catch (err) {
+        console.log('⚠️ Schema file read failed:', err.message);
+      }
+      // Fallback: query DB directly
       const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all();
       const schema = tables.map(t => {
         const cols = db.prepare(`PRAGMA table_info(${t.name})`).all();
@@ -494,6 +534,7 @@ function executeTool(name, args) {
           row_count: db.prepare(`SELECT COUNT(*) as cnt FROM ${t.name}`).get().cnt,
         };
       });
+      console.log('🗄️ Schema from DB (fallback)');
       return schema;
     }
 

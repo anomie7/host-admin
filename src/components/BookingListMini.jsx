@@ -22,13 +22,14 @@ const statusFlow = {
   cancelled: [],
 };
 
-function formatWon(amount) {
-  if (amount == null) return '';
-  return `₩${Number(amount).toLocaleString()}`;
-}
+const actionLabels = {
+  checked_in: '입실 중으로',
+  checked_out: '퇴실 처리',
+  cancelled: '입실 취소',
+};
 
-function safe(fn, fallback = '') {
-  try { return fn() ?? fallback; } catch { return fallback; }
+function formatWon(amount) {
+  return `₩${Number(amount).toLocaleString()}`;
 }
 
 export default function BookingListMini({ title, bookings: initialBookings }) {
@@ -122,7 +123,7 @@ export default function BookingListMini({ title, bookings: initialBookings }) {
                       disabled={savingId === id}
                       style={{ fontSize: 10, padding: '2px 8px' }}
                     >
-                      {savingId === id ? '...' : statusLabels[s]}
+                      {savingId === id ? '...' : (actionLabels[s] || statusLabels[s])}
                     </button>
                   ))}
                 </div>
