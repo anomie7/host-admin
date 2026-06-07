@@ -31,8 +31,22 @@ const PLATFORM_LABELS = {
 function normalizeData(data) {
   if (Array.isArray(data)) return data;
   if (data && typeof data === 'object') {
-    // {labels: [...], datasets: [{data: [...]}]} → transform
-    if (data.labels && Array.isArray(data.labels)) {
+    // {labels: [...], ...series arrays} — generic labeled series format
+    // Check this BEFORE datasets to catch {labels, values, ...} formats
+    if (data.labels && Array.isArray(data.labels) && !data.datasets) {
+      const series = Object.entries(data).filter(([k, v]) =>
+        k !== 'labels' && Array.isArray(v) && v.length === data.labels.length
+      );
+      if (series.length >= 1) {
+        return data.labels.map((label, i) => {
+          const obj = { label };
+          series.forEach(([k, v]) => { obj[k] = v[i]; });
+          return obj;
+        });
+      }
+    }
+    // {labels: [...], datasets: [{data: [...]}]} → transform (Chart.js format)
+    if (data.labels && Array.isArray(data.labels) && data.datasets && Array.isArray(data.datasets)) {
       return data.labels.map((label, i) => ({
         label,
         value: data.datasets?.[0]?.data?.[i],
@@ -61,20 +75,6 @@ function normalizeData(data) {
     }
     // {labels: [...], ...series arrays} — generic labeled series format
     // e.g. {labels: ["1월","2월"], revenue: [100,200], booking_count: [5,6]}
-    if (data.labels && Array.isArray(data.labels)) {
-      // Find all numeric array properties
-      const series = Object.entries(data).filter(([k, v]) =>
-        k !== 'labels' && Array.isArray(v) && v.length === data.labels.length
-      );
-      if (series.length >= 1) {
-        return data.labels.map((label, i) => {
-          const obj = { label };
-          series.forEach(([k, v]) => { obj[k] = v[i]; });
-          return obj;
-        });
-      }
-    }
-    // {columns: [...], rows: [[...], ...]} — SQL result format
     if (data.columns && Array.isArray(data.columns) && data.rows && Array.isArray(data.rows)) {
       return data.rows.map(row => {
         const obj = {};
@@ -265,7 +265,12 @@ function SummaryStats({ data }) {
 
 // --- Property Ranking Horizontal Bar Chart ---
 function PropertyRanking({ data, sortBy }) {
-  const chartData = normalizeData(data).filter(d => d.name || d.property_name);
+  const raw = normalizeData(data);
+  // Normalize: ensure property_name is set (SQL may return 'name' instead of 'property_name')
+  const chartData = raw.map(d => ({
+    ...d,
+    property_name: d.property_name || d.name || '',
+  })).filter(d => d.property_name);
   if (chartData.length === 0) return <EmptyChart />;
   const maxVal = Math.max(...chartData.map(d => sortBy === 'revenue' ? (d.total_revenue || d.revenue || 0) : (d.booking_count || d.bookings || 0)), 1);
   const barColor = sortBy === 'revenue' ? 'var(--accent)' : 'var(--secondary)';

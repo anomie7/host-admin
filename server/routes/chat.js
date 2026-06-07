@@ -635,9 +635,14 @@ Data modification tools:
 - remove_property_tag(property_id, tag)
 
 ## UI types for render_ui (last step)
-- stats-card: { label, value, subtext }
-- booking-list: { title, bookings: [{id, guest_name, property_name, check_in, check_out, status, amount}] }
-- chart: { chartType: "revenue"|"platform"|"property-ranking"|"summary"|"status", title, data }
+- stats-card: { label, value, subtext } — 단순 통계, "수익 얼마지?"
+- booking-list: { title, bookings: [{id, guest_name, property_name, check_in, check_out, status, amount}] } — 예약 목록
+- chart: { chartType, title, data }
+  - "revenue": 월별 수익 추이, "추이 그래프"
+  - "platform": 플랫폼별 비교, "플랫폼별로"
+  - "property-ranking": 숙소 순위/랭킹, "TOP", "가장 많은"
+  - "summary": 종합 통계 요약
+  - "status": 예약 상태 분포
 - table: { title, headers, rows }
 - html: { content: "HTML with inline styles" }
 
@@ -706,10 +711,19 @@ TABLE bookings: id(INT PK), property_id(INT FK), guest_name(TEXT), check_in(TEXT
 
 ## UI types for render_ui (MUST call this as last step!)
 - stats-card: { label, value, subtext }
+  Use for: 단순 통계, "수익 얼마지?", "예약 몇 건?"
 - booking-list: { title, bookings: [...] }
-- chart: { chartType: "revenue"|"platform"|"property-ranking"|"summary"|"status", title, data }
+  Use for: 예약 목록, "예약 보여줘"
+- chart: { chartType, title, data }
+  - chartType: "revenue" — Use for: 월별/일별 수익 추이, "추이 그래프", "월별 수익"
+  - chartType: "platform" — Use for: 플랫폼별 비교, "플랫폼별로", "에어비앤비 vs 부킹"
+  - chartType: "property-ranking" — Use for: 숙소 순위/랭킹, "TOP", "가장 많은", "순위"
+  - chartType: "summary" — Use for: 종합 통계 요약
+  - chartType: "status" — Use for: 예약 상태 분포
 - table: { title, headers, rows }
+  Use for: 데이터 상세, "표로 보여줘"
 - html: { content: "HTML with inline styles" }
+  Use for: 커스텀 레이아웃, 복잡한 시각화
 
 ## USING CONTEXT
 The conversation history has [CONTEXT:] markers with structured data.
@@ -1442,6 +1456,38 @@ class Orchestrator {
     }
     if (!hasData) {
       this.state.verdict = { verdict: 'retry', reason: 'UI에 데이터가 없습니다. 데이터를 포함하여 다시 실행하세요.' };
+      this.send('verdict', this.state.verdict);
+      return 'retry';
+    }
+
+    // Check 3: Intent-based UI type validation
+    const lastUserMsg = [...this.userMessages].reverse().find(m => m.role === 'user');
+    const text = lastUserMsg?.content || '';
+    const wantsRanking = /랭킹|순위|TOP|그려|많은|가장/.test(text);
+    const wantsPlatform = /플랫폼별|플랫|에어비앤비|airbnb|부킹/.test(text);
+    const wantsTrend = /추이|트렌드|그래프/.test(text);
+    const wantsChart = /차트|그래프|시각화|그려/.test(text);
+
+    if (effectiveUI.type === 'chart') {
+      const ct = effectiveUI.props?.chartType;
+      if (wantsRanking && ct !== 'property-ranking') {
+        this.state.verdict = { verdict: 'retry', reason: `사용자가 랭킹을 요청했지만 chartType이 "${ct}"입니다. "property-ranking" 차트로 다시 표시하세요.` };
+        this.send('verdict', this.state.verdict);
+        return 'retry';
+      }
+      if (wantsPlatform && ct !== 'platform') {
+        this.state.verdict = { verdict: 'retry', reason: `사용자가 플랫폼별 분석을 요청했지만 chartType이 "${ct}"입니다. "platform" 차트로 다시 표시하세요.` };
+        this.send('verdict', this.state.verdict);
+        return 'retry';
+      }
+      if (wantsTrend && ct !== 'revenue') {
+        this.state.verdict = { verdict: 'retry', reason: `사용자가 추이/트렌드를 요청했지만 chartType이 "${ct}"입니다. "revenue" 차트로 다시 표시하세요.` };
+        this.send('verdict', this.state.verdict);
+        return 'retry';
+      }
+    } else if (wantsChart && effectiveUI.type !== 'chart') {
+      // User asked for chart/visualization but got non-chart UI
+      this.state.verdict = { verdict: 'retry', reason: `사용자가 시각화/차트를 요청했지만 "${effectiveUI.type}"로 응답했습니다. chart 타입으로 다시 표시하세요.` };
       this.send('verdict', this.state.verdict);
       return 'retry';
     }
